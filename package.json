@@ -1,0 +1,25 @@
+{
+  "name": "kiwoom-auto-trading",
+  "version": "1.0.20261004.1   # Plango Agent Client Program",
+  "description": "Plango Agent Client Program",
+  "main": "backend/server.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd backend && nodemon server.js",
+    "client": "cd frontend && npm start",
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build"
+  },
+  "keywords": [
+    "PlanGo",
+    "stock",
+    "trading",
+    "automation"
+  ],
+  "author": "Chul hee Park",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.0.2"
+  }
+}

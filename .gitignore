@@ -1,0 +1,20 @@
+node_modules/
+
+.env
+.env.*
+
+backend/log/
+
+# Kiwoom API credentials
+*_appkey.txt
+*_secretkey.txt
+
+# Runtime / generated data
+backend/data/
+
+# Frontend build output
+frontend/build/
+
+# Local documents / notes
+*.docx
+

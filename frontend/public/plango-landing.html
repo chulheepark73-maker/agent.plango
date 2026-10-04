@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="favicon.ico" sizes="any" />
+<link rel="icon" type="image/png" href="favicon.png" sizes="32x32" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<title>PlanGo — 분할매수매도 자동매매</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Pretendard:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+ --bg: #050810;
+ --surface: #0d1220;
+ --surface2: #131926;
+ --border: rgba(255,255,255,0.07);
+ --accent: #3b82f6;
+ --accent2: #06b6d4;
+ --green: #10b981;
+ --red: #f43f5e;
+ --text: #e8edf5;
+ --muted: #6b7a99;
+ --gold: #f59e0b;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+ font-family: 'Pretendard', sans-serif;
+ background: var(--bg);
+ color: var(--text);
+ overflow-x: hidden;
+}
+
+/* ── NAV ── */
+nav {
+ position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+ display: flex; justify-content: space-between; align-items: center;
+ padding: 18px 48px;
+ background: rgba(5,8,16,0.85);
+ backdrop-filter: blur(20px);
+ border-bottom: 1px solid var(--border);
+}
+.logo {
+ font-family: 'Pretendard', sans-serif;
+ font-size: 1.6rem;
+ font-weight: 800;
+ letter-spacing: 1px;
+ background: linear-gradient(135deg, var(--accent), var(--accent2));
+ -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+nav ul { list-style:none; display:flex; gap:32px; }
+nav ul a { color: var(--muted); text-decoration:none; font-size:.9rem; font-weight:500; transition:.2s; }
+nav ul a:hover { color: var(--text); }
+.nav-cta {
+ background: var(--accent); color: #fff;
+ padding: 9px 22px; border-radius: 8px;
+ text-decoration: none; font-size: .9rem; font-weight: 600;
+ transition: .2s; border: none; cursor: pointer;
+}
+.nav-cta:hover { background: #2563eb; }
+
+/* ── HERO ── */
+.hero {
+ min-height: 100vh;
+ display: flex; flex-direction: column; justify-content: center; align-items: center;
+ text-align: center;
+ padding: 120px 24px 80px;
+ position: relative; overflow: hidden;
+}
+.hero-grid {
+ position: absolute; inset: 0;
+ background-image:
+  linear-gradient(rgba(59,130,246,0.04) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(59,130,246,0.04) 1px, transparent 1px);
+ background-size: 48px 48px;
+ mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black, transparent);
+}
+.hero-glow {
+ position: absolute; top: 10%; left: 50%; transform: translateX(-50%);
+ width: 600px; height: 600px;
+ background: radial-gradient(circle, rgba(59,130,246,0.12) 0%, transparent 70%);
+ pointer-events: none;
+}
+.hero-badge {
+ display: inline-flex; align-items: center; gap: 8px;
+ background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3);
+ padding: 6px 16px; border-radius: 999px;
+ font-size: .82rem; font-weight: 600; color: var(--accent2);
+ margin-bottom: 28px;
+ animation: fadeUp .6s ease both;
+}
+.hero-badge span { width:6px; height:6px; background:var(--green); border-radius:50%; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.4)} }
+
+.hero h1 {
+ font-family: 'Bebas Neue', sans-serif;
+ font-size: clamp(3.5rem, 8vw, 7rem);
+ line-height: 1;
+ letter-spacing: 2px;
+ margin-bottom: 12px;
+ animation: fadeUp .7s .1s ease both;
+}
+.hero h1 .accent {
+ background: linear-gradient(135deg, var(--accent), var(--accent2));
+ -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.hero-sub {
+ font-size: clamp(1rem, 2vw, 1.25rem);
+ color: var(--muted); max-width: 560px;
+ line-height: 1.7; margin-bottom: 44px;
+ animation: fadeUp .7s .2s ease both;
+}
+.hero-actions {
+ display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
+ animation: fadeUp .7s .3s ease both;
+}
+.btn-primary {
+ background: var(--accent); color: #fff;
+ padding: 14px 32px; border-radius: 10px;
+ text-decoration: none; font-weight: 700; font-size: 1rem;
+ transition: .2s; display: inline-flex; align-items: center; gap: 8px;
+}
+.btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
+.btn-secondary {
+ background: transparent; color: var(--text);
+ padding: 14px 32px; border-radius: 10px;
+ text-decoration: none; font-weight: 600; font-size: 1rem;
+ border: 1px solid var(--border); transition: .2s;
+}
+.btn-secondary:hover { border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.04); }
+
+/* ── DASHBOARD MOCKUP ── */
+.mockup-wrap {
+ margin-top: 64px; width: 100%; max-width: 900px;
+ animation: fadeUp .8s .4s ease both;
+}
+.mockup {
+ background: var(--surface);
+ border: 1px solid var(--border);
+ border-radius: 16px;
+ overflow: hidden;
+ box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.04);
+}
+.mockup-bar {
+ background: var(--surface2);
+ padding: 12px 16px;
+ display: flex; align-items: center; gap: 8px;
+ border-bottom: 1px solid var(--border);
+}
+.mockup-bar span { width:11px;height:11px;border-radius:50%; }
+.mockup-bar span:nth-child(1){background:#f43f5e;}
+.mockup-bar span:nth-child(2){background:#f59e0b;}
+.mockup-bar span:nth-child(3){background:#10b981;}
+.mockup-url {
+ flex:1; background:rgba(255,255,255,.05); border-radius:5px;
+ padding:4px 12px; font-size:.78rem; color:var(--muted);
+ margin-left:8px;
+}
+.mockup-body { padding: 20px; }
+.mockup-header {
+ display: flex; justify-content: space-between; align-items: center;
+ margin-bottom: 16px;
+}
+.mockup-title { font-weight:700; font-size:.95rem; }
+.market-chip {
+ display:inline-flex; align-items:center; gap:6px;
+ background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.3);
+ color: var(--green); padding:3px 10px; border-radius:999px; font-size:.75rem; font-weight:600;
+}
+.market-chip i { width:6px;height:6px;background:var(--green);border-radius:50%;animation:pulse 2s infinite; }
+.time-chip { color:var(--muted); font-size:.85rem; font-weight:600; margin-left:8px; }
+
+.stock-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.stock-card {
+ background: var(--surface2);
+ border: 1px solid var(--border);
+ border-radius: 10px; padding: 14px;
+}
+.stock-name-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:2px; }
+.mode-badge { display:inline-flex; align-items:center; padding:2px 7px; border-radius:999px; font-size:.62rem; font-weight:700; line-height:1.2; }
+.mode-split { color:#f59e0b; border:1px solid rgba(245,158,11,.45); background:rgba(245,158,11,.10); }
+.mode-infinite { color:#ec4899; border:1px solid rgba(236,72,153,.45); background:rgba(236,72,153,.10); }
+.stock-name { font-weight:700; font-size:.88rem; margin-bottom:2px; }
+.stock-price { font-size:1.1rem; font-weight:700; color:var(--red); }
+.stock-rate { font-size:.8rem; font-weight:600; color:var(--red); margin-left:6px; }
+.stock-table { width:100%; border-collapse:collapse; margin-top:10px; font-size:.75rem; }
+.stock-table th { color:var(--muted); padding:3px 4px; text-align:center; font-weight:500; }
+.stock-table td { padding:4px 4px; text-align:center; border-top:1px solid var(--border); }
+.profit { color:var(--red); font-weight:600; }
+.loss { color:var(--accent); font-weight:600; }
+
+/* ── STATS BAR ── */
+.stats {
+ display: flex; justify-content: center; gap: 0;
+ max-width: 900px; margin: 64px auto;
+ background: var(--surface);
+ border: 1px solid var(--border);
+ border-radius: 16px; overflow: hidden;
+}
+.stat-item {
+ flex:1; padding:32px 24px; text-align:center;
+ border-right: 1px solid var(--border);
+}
+.stat-item:last-child { border-right: none; }
+.stat-num {
+ font-family: 'Bebas Neue', sans-serif;
+ font-size: 2.8rem; letter-spacing: 1px;
+ background: linear-gradient(135deg, var(--accent), var(--accent2));
+ -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.stat-label { color:var(--muted); font-size:.85rem; margin-top:4px; }
+
+/* ── SECTION ── */
+section { padding: 100px 24px; max-width: 1100px; margin: 0 auto; }
+.section-tag {
+ font-size:.75rem; font-weight:700; letter-spacing:3px; text-transform:uppercase;
+ color:var(--accent2); margin-bottom:12px;
+}
+.section-title {
+ font-family: 'Bebas Neue', sans-serif;
+ font-size: clamp(2.2rem, 5vw, 3.8rem);
+ line-height: 1.05; letter-spacing:1px;
+ margin-bottom: 16px;
+}
+.section-desc { color:var(--muted); font-size:1.05rem; line-height:1.7; max-width:520px; }
+
+/* ── FEATURES ── */
+.features { max-width: 1100px; margin: 0 auto; padding: 0 24px 100px; }
+.features-grid { display:grid; grid-template-columns: repeat(3,1fr); gap:16px; margin-top:56px; }
+.feat-card {
+ background: var(--surface);
+ border: 1px solid var(--border);
+ border-radius: 14px; padding: 28px;
+ transition: .25s;
+ position: relative; overflow: hidden;
+}
+.feat-card:hover { border-color: rgba(59,130,246,.3); transform: translateY(-3px); }
+.feat-card::before {
+ content:''; position:absolute; top:0;left:0;right:0; height:2px;
+ background:linear-gradient(90deg,var(--accent),var(--accent2));
+ opacity:0; transition:.25s;
+}
+.feat-card:hover::before { opacity:1; }
+.feat-icon { font-size:1.8rem; margin-bottom:16px; }
+.feat-title { font-weight:700; font-size:1rem; margin-bottom:8px; }
+.feat-desc { color:var(--muted); font-size:.88rem; line-height:1.65; }
+
+/* ── HOW IT WORKS ── */
+.how { max-width: 1100px; margin: 0 auto; padding: 0 24px 100px; }
+.steps { display:grid; grid-template-columns: repeat(3,1fr); gap:24px; margin-top:56px; position:relative; }
+.steps::before {
+ content:''; position:absolute; top:36px; left:16%; right:16%;
+ height:1px; background:linear-gradient(90deg,transparent,var(--border),var(--border),transparent);
+}
+.step { text-align:center; padding:0 16px; }
+.step-num {
+ width:56px; height:56px; border-radius:50%;
+ background:linear-gradient(135deg,var(--accent),var(--accent2));
+ display:flex;align-items:center;justify-content:center;
+ font-family:'Bebas Neue',sans-serif; font-size:1.4rem;
+ margin:0 auto 20px; position:relative; z-index:1;
+}
+.step-title { font-weight:700; font-size:1rem; margin-bottom:8px; }
+.step-desc { color:var(--muted); font-size:.87rem; line-height:1.65; }
+
+/* ── TRAILING STATUS ── */
+.trailing { max-width:1100px; margin:0 auto; padding:0 24px 100px; }
+.trailing-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:48px; }
+.trailing-card {
+ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:24px;
+}
+.trailing-card-title { font-weight:700; font-size:.95rem; margin-bottom:16px; display:flex;align-items:center;gap:8px; }
+.trailing-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+.trailing-table th { color:var(--muted); padding:6px 8px; text-align:center; font-weight:500; }
+.trailing-table td { padding:7px 8px; text-align:center; border-top:1px solid var(--border); }
+.up { color:var(--red); font-weight:700; }
+.dn { color:var(--accent); font-weight:700; }
+.tag-buy { background:rgba(244,63,94,.1);color:var(--red);padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:600; }
+.tag-sell { background:rgba(59,130,246,.1);color:var(--accent);padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:600; }
+
+/* ── REAL-TIME BADGE ── */
+.realtime-info {
+ display:flex; align-items:center; gap:12px;
+ background:rgba(16,185,129,.06); border:1px solid rgba(16,185,129,.2);
+ border-radius:10px; padding:14px 20px; margin-top:20px;
+ font-size:.85rem; color:var(--muted);
+}
+.realtime-dot { width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;flex-shrink:0; }
+.realtime-info strong { color:var(--green); }
+
+/* ── PRICING ── */
+.pricing { max-width:1100px; margin:0 auto; padding:0 24px 100px; }
+.pricing-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:56px; }
+.price-card {
+ background:var(--surface); border:1px solid var(--border);
+ border-radius:16px; padding:36px; position:relative;
+}
+.price-card.featured {
+ border-color:var(--accent);
+ background: linear-gradient(135deg, rgba(59,130,246,.08), rgba(6,182,212,.05));
+}
+.price-badge {
+ position:absolute; top:-12px; left:28px;
+ background:var(--accent); color:#fff;
+ padding:3px 14px; border-radius:999px; font-size:.75rem; font-weight:700;
+}
+.price-label { color:var(--muted); font-size:.85rem; margin-bottom:8px; }
+.price-amount {
+ font-family:'Bebas Neue',sans-serif; font-size:3rem; letter-spacing:1px;
+ margin-bottom:4px;
+}
+.price-period { color:var(--muted); font-size:.85rem; margin-bottom:24px; }
+.price-desc { color:var(--muted); font-size:.9rem; line-height:1.6; margin-bottom:28px; padding-bottom:28px; border-bottom:1px solid var(--border); }
+.price-list { list-style:none; display:flex; flex-direction:column; gap:11px; margin-bottom:32px; }
+.price-list li { display:flex; align-items:center; gap:10px; font-size:.88rem; }
+.price-list li::before { content:'✓'; color:var(--green); font-weight:700; flex-shrink:0; }
+.price-btn {
+ width:100%; padding:14px; border-radius:10px; font-weight:700; font-size:1rem;
+ border:none; cursor:pointer; transition:.2s;
+ background:var(--accent); color:#fff;
+}
+.price-btn:hover { background:#2563eb; }
+.price-btn.outline {
+ background:transparent; border:1px solid var(--border); color:var(--text);
+}
+.price-btn.outline:hover { border-color:rgba(255,255,255,.2); }
+
+/* ── FAQ ── */
+.faq { max-width:800px; margin:0 auto; padding:0 24px 100px; }
+.faq-list { margin-top:48px; display:flex; flex-direction:column; gap:12px; }
+.faq-item {
+ background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden;
+}
+.faq-q {
+ padding:20px 24px; font-weight:600; font-size:.95rem; cursor:pointer;
+ display:flex; justify-content:space-between; align-items:center;
+ list-style:none; user-select:none;
+}
+.faq-q::after { content:'+'; font-size:1.3rem; color:var(--muted); transition:.2s; }
+.faq-item.open .faq-q::after { transform:rotate(45deg); }
+.faq-a {
+ max-height:0; overflow:hidden; transition:.3s ease;
+ color:var(--muted); font-size:.88rem; line-height:1.7;
+}
+.faq-item.open .faq-a { max-height:300px; }
+.faq-a-inner { padding:0 24px 20px; }
+
+/* ── CTA ── */
+.cta-section {
+ text-align:center; padding:100px 24px;
+ position:relative; overflow:hidden;
+}
+.cta-section::before {
+ content:''; position:absolute; top:50%;left:50%;transform:translate(-50%,-50%);
+ width:700px;height:700px;
+ background:radial-gradient(circle,rgba(59,130,246,.1),transparent 70%);
+ pointer-events:none;
+}
+.cta-section .section-title { margin:0 auto 16px; }
+.cta-section .section-desc { margin:0 auto 36px; text-align:center; }
+
+/* ── FOOTER ── */
+footer {
+ border-top:1px solid var(--border); padding:40px 48px;
+ display:flex; justify-content:space-between; align-items:center;
+ color:var(--muted); font-size:.82rem;
+}
+.footer-logo {
+ font-family:'Bebas Neue',sans-serif; font-size:1.4rem; letter-spacing:2px;
+ background:linear-gradient(135deg,var(--accent),var(--accent2));
+ -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+
+/* ── ANIMATIONS ── */
+@keyframes fadeUp {
+ from { opacity:0; transform:translateY(24px); }
+ to  { opacity:1; transform:translateY(0); }
+}
+.reveal { opacity:0; transform:translateY(30px); transition:.7s ease; }
+.reveal.visible { opacity:1; transform:translateY(0); }
+
+/* ── RESPONSIVE ── */
+@media(max-width:768px){
+ nav { padding:14px 20px; }
+ nav ul { display:none; }
+ .stock-grid, .features-grid, .steps, .trailing-grid, .pricing-grid { grid-template-columns:1fr; }
+ .steps::before { display:none; }
+ .stats { flex-direction:column; }
+ .stat-item { border-right:none; border-bottom:1px solid var(--border); }
+ .stat-item:last-child { border-bottom:none; }
+ footer { flex-direction:column; gap:12px; text-align:center; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+ <div class="logo">PlanGo</div>
+ <ul>
+  <li><a href="#features">기능</a></li>
+  <li><a href="#how">사용법</a></li>
+  <li><a href="#pricing">요금</a></li>
+  <li><a href="#faq">FAQ</a></li>
+ </ul>
+ <div style="display:flex; gap:8px;">
+  <a href="#pricing" class="nav-cta">시작하기</a>
+  <a href="https://plango.today" target="_blank" class="nav-cta">Login</a>
+ </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+ <div class="hero-grid"></div>
+ <div class="hero-glow"></div>
+
+ <div class="hero-badge">
+  <span></span> KRX · US 실시간 연동 중
+ </div>
+
+ <h1>
+  분할매매 무한매매를<br>
+  <span class="accent">자동으로</span> 돌린다
+ </h1>
+ <p class="hero-sub">
+  분할매매부터 무한매매까지, 종목별 전략을 자유롭게 설정하고 실행합니다.<br>
+  <strong>분할·무한매매 동시 진행</strong>과 WebSocket 실시간 모니터링을 한 화면에서 제공합니다.
+ </p>
+ <div class="hero-actions">
+  <a href="#pricing" class="btn-primary">지금 시작하기 →</a>
+  <a href="#features" class="btn-secondary">기능 살펴보기</a>
+ </div>
+
+ <!-- Dashboard Mockup -->
+ <div class="mockup-wrap">
+  <div class="mockup">
+   <div class="mockup-bar">
+    <span></span><span></span><span></span>
+    <div class="mockup-url">PlanGo.today/dashboard</div>
+   </div>
+   <div class="mockup-body">
+    <div class="mockup-header">
+     <span class="mockup-title">매수종목</span>
+     <div>
+      <span class="market-chip"><i></i>KRX</span>
+      <span class="time-chip">09:32:14</span>
+     </div>
+    </div>
+    <div class="stock-grid">
+     <div class="stock-card">
+      <div class="stock-name-row"><div class="stock-name">삼성전자 (005930)</div><span class="mode-badge mode-infinite">무한</span></div>
+      <div style="margin-top:4px">
+       <span class="stock-price">74,200</span>
+       <span class="stock-rate">(+2.35%)</span>
+      </div>
+      <table class="stock-table">
+       <tr><th>No</th><th>매수가</th><th>목표가</th><th>수량</th><th>기대수익</th></tr>
+       <tr><td>1</td><td>72,100</td><td>75,000</td><td>100</td><td class="profit">290,000 (4.02%)</td></tr>
+       <tr><td>2</td><td>71,500</td><td>75,000</td><td>50</td><td class="profit">175,000 (4.89%)</td></tr>
+      </table>
+     </div>
+     <div class="stock-card">
+      <div class="stock-name-row"><div class="stock-name">SK하이닉스 (000660)</div><span class="mode-badge mode-split">분할</span><span class="mode-badge mode-infinite">무한</span></div>
+      <div style="margin-top:4px">
+       <span class="stock-price" style="color:var(--accent)">183,500</span>
+       <span class="stock-rate" style="color:var(--accent)">(-1.08%)</span>
+      </div>
+      <table class="stock-table">
+       <tr><th>No</th><th>매수가</th><th>목표가</th><th>수량</th><th>기대수익</th></tr>
+       <tr><td>1</td><td>185,000</td><td>195,000</td><td>30</td><td class="loss">300,000 (5.40%)</td></tr>
+      </table>
+     </div>
+    </div>
+   </div>
+  </div>
+ </div>
+</section>
+
+<!-- STATS -->
+<div style="max-width:900px;margin:0 auto;padding:0 24px;">
+ <div class="stats reveal">
+  <div class="stat-item">
+   <div class="stat-num">WebSocket</div>
+   <div class="stat-label">실시간 가격 자동 갱신</div>
+  </div>
+  <div class="stat-item">
+   <div class="stat-num">KRX+US</div>
+   <div class="stat-label">양 거래소 동시 지원 (Pre-After 마켓포함)</div>
+  </div>
+  <div class="stat-item">
+   <div class="stat-num">분할무한</div>
+   <div class="stat-label">두 전략 동시 진행 가능</div>
+  </div>
+ </div>
+</div>
+
+<!-- FEATURES -->
+<div class="features" id="features">
+ <div class="reveal">
+  <div class="section-tag">FEATURES</div>
+  <div class="section-title">분할매매와 무한매매,한 화면에서</div>
+  <p class="section-desc">종목별로 분할매매 또는 무한매매를 선택하고, 필요하면 두 전략을 동시에 진행할 수 있습니다.</p>
+ </div>
+ <div class="features-grid">
+  <div class="feat-card reveal">
+   <div class="feat-icon">📊</div>
+   <div class="feat-title">실시간 매수종목 현황</div>
+   <div class="feat-desc">종목별·차수별 매수가, 목표가, 수량, 기대수익을 한눈에. WebSocket을 통해 KRX + KRX After, US PRE / Regular / After 거래시간 중 현재가를 WebSocket으로 실시간 자동 갱신.</div>
+  </div>
+  <div class="feat-card reveal">
+   <div class="feat-icon">🎯</div>
+   <div class="feat-title">Trailing Stop 모니터링</div>
+   <div class="feat-desc">Buy·Sell Trailing Stop 상태를 WebSocket으로 실시간 추적하고 텔레그램 메시지로 즉시 알려드립니다.</div>
+  </div>
+  <div class="feat-card reveal">
+   <div class="feat-icon">🔄</div>
+   <div class="feat-title">분할·무한매매 동시 진행</div>
+   <div class="feat-desc">종목별로 분할매매와 무한매매를 선택해 운용할 수 있으며, 서로 다른 종목에서 두 전략을 동시에 진행할 수 있습니다.</div>
+  </div>
+  <div class="feat-card reveal">
+   <div class="feat-icon">📈</div>
+   <div class="feat-title">분할매매 설정 관리</div>
+   <div class="feat-desc">차수별 매수·매도 가격과 수량을 설정하고 대시보드에서 현재 Stage와 목표가를 한눈에 확인합니다.</div>
+  </div>
+  <div class="feat-card reveal">
+   <div class="feat-icon">📋</div>
+   <div class="feat-title">월별 매도완료 내역</div>
+   <div class="feat-desc">당월 매도완료 내역을 실현손익·수익률과 함께 테이블로 정리. 수익/손실 색상으로 직관적 구분.</div>
+  </div>
+  <div class="feat-card reveal">
+   <div class="feat-icon">🔢</div>
+   <div class="feat-title">주문번호 트래킹</div>
+   <div class="feat-desc">Trailing에서 주문조건이 충족되면 주문번호가 표시되며 주문대기 상태로 전환됩니다. 체결이 완료되면 키움증권에서 카카오톡으로 체결 내용을 즉시 전송합니다.</div>
+  </div>
+  <div class="feat-card reveal">
+   <div class="feat-icon">♾️</div>
+   <div class="feat-title">무한매매 전략 지원</div>
+   <div class="feat-desc">목표수익과 평단을 기준으로 반복적인 매수·매도를 관리하는 무한매매 전략을 지원합니다. 분할매매와 함께 사용할 수 있습니다.</div>
+  </div>
+  <div class="feat-card reveal">
+   <div class="feat-icon">⏰</div>
+   <div class="feat-title">거래시간 자동 감지</div>
+   <div class="feat-desc">KRX + KRX After·US PRE·US Regular·US After·휴장·주말을 자동으로 감지하고 WebSocket 연결을 관리합니다. 필요한 시장 데이터를 실시간으로 수신합니다.</div>
+  </div>
+ </div>
+</div>
+
+<!-- TRAILING STATUS PREVIEW -->
+<div class="trailing">
+ <div class="reveal">
+  <div class="section-tag">REAL-TIME</div>
+  <div class="section-title">분할·무한매매 실시간으로 작동한다</div>
+  <p class="section-desc">장중에도 한 화면에서 전략별 상태를 확인할 수 있습니다. WebSocket을 통해 현재가와 주문·체결 상태를 실시간으로 전달받습니다.</p>
+ </div>
+ <div class="trailing-grid reveal">
+  <div class="trailing-card">
+   <div class="trailing-card-title"><span class="tag-buy">BUY</span> Trailing Buy Status</div>
+   <table class="trailing-table">
+    <tr><th>종목</th><th>차수</th><th>Low</th><th>현재가</th><th>상승률</th><th>기준</th></tr>
+    <tr>
+     <td>삼성전자</td><td>1차</td><td>71,200</td><td>71,200</td>
+     <td class="up">0.00%</td><td>3.00%</td>
+    </tr>
+    <tr>
+     <td>POSCO홀딩스</td><td>2차</td><td>418,000</td><td>418,000</td>
+     <td class="up">0.00%</td><td>3.00%</td>
+    </tr>
+   </table>
+  </div>
+  <div class="trailing-card">
+   <div class="trailing-card-title"><span class="tag-sell">SELL</span> Trailing Sell Status</div>
+   <table class="trailing-table">
+    <tr><th>종목</th><th>차수</th><th>High</th><th>현재가</th><th>하락률</th><th>기준</th></tr>
+    <tr>
+     <td>SK하이닉스</td><td>1차</td><td>189,500</td><td>189,500</td>
+     <td class="dn">0.00%</td><td>3.00%</td>
+    </tr>
+    <tr>
+     <td>카카오</td><td>1차</td><td>52,300</td><td>52,300</td>
+     <td class="dn">0.00%</td><td>3.00%</td>
+    </tr>
+   </table>
+  </div>
+ </div>
+ <div class="realtime-info reveal">
+  <div class="realtime-dot"></div>
+  <div>
+   거래시간 중 <strong>KRX + KRX After, US PRE / Regular / After WebSocket 실시간 데이터</strong>를 통해 현재가와 주문·체결 상태를 즉시 반영합니다.
+   주기적인 조회 없이 실시간 데이터 스트리밍으로 빠르고 효율적인 모니터링을 제공합니다.
+  </div>
+ </div>
+</div>
+
+
+<!-- HOW IT WORKS -->
+<div class="how" id="how">
+ <div class="reveal">
+  <div class="section-tag">HOW IT WORKS</div>
+  <div class="section-title">3단계로<br>바로 시작</div>
+ </div>
+ <div class="steps">
+  <div class="step reveal">
+   <div class="step-num">1</div>
+   <div class="step-title">계좌 연동</div>
+   <div class="step-desc">키움증권 API를 PlanGo 백엔드에 연결합니다. 인증키 입력 한 번으로 모든 종목 데이터가 자동 수집됩니다.</div>
+  </div>
+  <div class="step reveal">
+   <div class="step-num">2</div>
+   <div class="step-title">매매 전략 설정</div>
+   <div class="step-desc">종목별로 분할매매 또는 무한매매를 선택하고 조건을 설정합니다. 분할과 무한 전략을 서로 다른 종목에서 동시에 진행할 수 있습니다.</div>
+  </div>
+  <div class="step reveal">
+   <div class="step-num">3</div>
+   <div class="step-title">자동 실행·모니터링</div>
+   <div class="step-desc">대시보드에서 실시간 상태를 확인하고 설정한 조건에 따라 분할매매 또는 무한매매가 자동으로 매매가 시작됩니다. WebSocket으로 현재가와 주문·체결 상태를 실시간으로 확인합니다.</div>
+  </div>
+ </div>
+</div>
+
+
+
+<!-- PRICING -->
+<div class="pricing" id="pricing">
+ <div class="reveal">
+  <div class="section-tag">PRICING</div>
+  <div class="section-title">지금 바로<br>시작하세요</div>
+  <p class="section-desc">전문가의 도움으로 본인의 서버설치 및 사용방법을 알려드립니다. 한번의 설정으로 편하게 자동매매을 즐기세요.</p>
+ </div>
+ <div class="pricing-grid reveal">
+
+  <div class="price-card featured">
+   <div class="price-badge">Fisrt Step</div>
+   <div class="price-label">서버설치 플랜</div>
+   <div class="price-amount">₩500,000</div>
+   <div class="price-period">/ 월 유지보수 · VAT 별도</div>
+   <div class="price-desc">분할매매·무한매매 실시간 모니터링, 주문 실행 지원, 텔레그램 알림까지 한 번에 관리하는 환경.</div>
+   <ul class="price-list">
+    <li>서버구축</li>
+		<li>프로그램 구동 및 키움증권 RestAPI 등록 서비스</li>
+    <li>반복매매설정 관리</li>
+		<li>Trailing Buy/Sell 기능지원</li>
+    <li>텔레그램 알림 연동</li>
+    <li>원격 기술 지원</li>
+   </ul>
+   <button class="price-btn" onclick="alert('준비 중입니다!')">서버 신청하기</button>
+  </div>
+
+  <div class="price-card featured">
+   <div class="price-badge" style="background:var(--green);">정기구독</div>
+   <div class="price-label">월정액 구독 플랜</div>
+   <div class="price-amount">₩9,900</div>
+   <div class="price-period">/ 월 · VAT 별도</div>
+   <div class="price-desc">서버설치 이후 지속적인 프로그램 업데이트와 기능 개선, 원격 기술 지원을 받을 수 있습니다.</div>
+   <ul class="price-list">
+    <li>월별 프로그램 업데이트</li>
+    <li>신규 기능 우선 적용</li>
+    <li>원격 기술 지원 (무제한)</li>
+    <li>Trailing Buy/Sell 기능지원</li>
+    <li>텔레그램 알림 유지보수</li>
+    <li>장애 발생 시 우선 대응</li>
+   </ul>
+   <button class="price-btn" style="background:var(--green);" onclick="alert('준비 중입니다!')">구독 시작하기</button>
+  </div>
+ </div>
+</div>
+
+<!-- FAQ -->
+<div class="faq" id="faq">
+ <div class="reveal">
+  <div class="section-tag">FAQ</div>
+  <div class="section-title">자주 묻는 질문</div>
+ </div>
+ <div class="faq-list reveal">
+  <div class="faq-item">
+   <div class="faq-q">어떤 증권사를 지원하나요?</div>
+   <div class="faq-a"><div class="faq-a-inner">PlanGo 프로그램은 키움증권의 RestAPI에서 구동됩니다. KRX(한국거래소)와 (넥스트레이드) 양 거래소 모두 실시간 데이터를 제공합니다.</div></div>
+  </div>
+  <div class="faq-item">
+   <div class="faq-q">PC가 꺼져 있어도 자동매매가 돌아가나요?</div>
+   <div class="faq-a"><div class="faq-a-inner">PlanGo 백엔드를 서버에 배포하면 24시간 365일 PC 없이 자동매매가 가능합니다.</div></div>
+  </div>
+  <div class="faq-item">
+   <div class="faq-q">Trailing Stop 갱신 주기를 바꿀 수 있나요?</div>
+   <div class="faq-a"><div class="faq-a-inner">WebSocket을 통해 실시간으로 가격과 상태를 전달받습니다. 거래시간 외에는 실시간 데이터 연결이 필요하지 않은 경우 자동으로 관리됩니다.</div></div>
+  </div>
+  <div class="faq-item">
+   <div class="faq-q">내 계좌 정보는 안전한가요?</div>
+   <div class="faq-a"><div class="faq-a-inner">모든 계좌 정보와 API 키는 오직 사용자 본인의 서버에만 저장됩니다. PlanGo는 어떠한 매매 내역이나 잔고 정보도 수집하지 않습니다. </div></div>
+  </div>
+  <div class="faq-item">
+   <div class="faq-q">코딩을 몰라도 사용할 수 있나요?</div>
+   <div class="faq-a"><div class="faq-a-inner">프로그램 기능개선 및 수정은 원격으로 서비스 예정입니다. 초기설치시 방분 1:1 지원을 통해 도움을 드리고 HW적인 문제에 대해서는 보증기간내 서비스를 제공합니다.</div></div>
+  </div>
+  <div class="faq-item">
+   <div class="faq-q">매매 손실에 대한 책임은 누가 지나요?</div>
+   <div class="faq-a"><div class="faq-a-inner">종목선택 및 주문조건 실행 판단은 사용자 본인이 하며, 투자 결과에 대한 책임은 전적으로 투자자 본인에게 있습니다. PlanGo는 사용자가 설정한 조건에 따라 주문 실행을 지원하는 도구이며 투자를 권유하지 않습니다.</div></div>
+  </div>
+ </div>
+</div>
+
+<!-- CTA -->
+<div class="cta-section reveal">
+ <div class="section-tag" style="text-align:center">GET STARTED</div>
+ <div class="section-title" style="text-align:center">모든 준비는 끝났습니다.<br>이제 시작만 하면 됩니다.</div>
+ <p class="section-desc" style="text-align:center">
+  매일 화면을 들여다보지 않아도 됩니다.<br>PlanGo가 거래시간 내내 실시간으로 포지션을 모니터링합니다.
+ </p>
+ <div class="hero-actions">
+  <a href="#pricing" class="btn-primary">무료로 시작하기 →</a>
+  <a href="mailto:k9200391@naver.com" class="btn-secondary">문의하기</a> <br>k9200391@naver.com
+ </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+ <div class="footer-logo">PlanGo</div>
+ <div>© 2026 PlanGo · PlanGo.today</div>
+ <div>면책: 본 서비스는 참고용이며 투자 권유가 아닙니다. 투자 결과는 투자자 본인에게 있습니다.</div>
+</footer>
+
+<script>
+// Scroll reveal
+const observer = new IntersectionObserver((entries) => {
+ entries.forEach(e => { if(e.isIntersecting) e.target.classList.add('visible'); });
+}, { threshold: 0.1 });
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// FAQ toggle
+document.querySelectorAll('.faq-q').forEach(q => {
+ q.addEventListener('click', () => {
+  const item = q.parentElement;
+  item.classList.toggle('open');
+ });
+});
+
+// Live clock
+function updateClock() {
+ const now = new Date();
+ const t = [now.getHours(), now.getMinutes(), now.getSeconds()]
+  .map(n => String(n).padStart(2,'0')).join(':');
+ const el = document.querySelector('.time-chip');
+ if(el) el.textContent = t;
+}
+setInterval(updateClock, 1000);
+updateClock();
+</script>
+</body>
+</html>
