@@ -6,15 +6,9 @@
  */
 
 const WebSocket = require('ws');
+const { getKiwoomWsUrl } = require('./kiwoomMode');
 
-const LIVE_WS_URL = 'wss://api.kiwoom.com:10000/api/dostk/websocket';
-const MOCK_WS_URL = 'wss://mockapi.kiwoom.com:10000/api/dostk/websocket';
-
-const resolveKiwoomWsUrl = () => {
-  const base = process.env.KIWOOM_BASE_URL || process.env.KIWOOM_TOKEN_URL || '';
-  if (String(base).includes('mock')) return MOCK_WS_URL;
-  return process.env.KIWOOM_WS_URL || LIVE_WS_URL;
-};
+const resolveKiwoomWsUrl = getKiwoomWsUrl;
 
 /** 토큰별 WS 요청 직렬화 (조건검색 중복 호출 방지) */
 const oneshotQueues = new Map();

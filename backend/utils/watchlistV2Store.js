@@ -2,7 +2,7 @@
  * 관심종목 V2 — instruments FK, KRX/US 통합
  * 레거시 users.watchlist / us_watchlist 와 분리
  */
-const pool = require('./db');
+const pool = require('./tradingDb');
 const {
   ensureTradingV2Tables,
   upsertInstrument,

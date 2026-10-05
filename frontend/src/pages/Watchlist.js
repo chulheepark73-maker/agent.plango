@@ -96,12 +96,16 @@ const V2_DISABLED_PANEL_SX = { opacity: 0.4, pointerEvents: 'none', userSelect: 
 const INFINITE_BUY_MULTIPLIER_OPTIONS = ['0', '0.5', '1', '1.5', '2', '2.5', '3'];
 
 /** 무한매수 입력 — 알약형 필드 */
+const isDarkTheme = (theme) => theme.palette.mode === 'dark';
+const infinitePillBg = (theme) => (isDarkTheme(theme) ? '#081120' : '#f6f8fa');
+const infinitePillBorder = (theme) => (isDarkTheme(theme) ? '#1e2d45' : '#d0d7de');
+
 const INFINITE_PILL_INPUT_SX = {
   '& .MuiOutlinedInput-root': {
     height: 32,
     borderRadius: '20px',
-    bgcolor: '#081120',
-    '& fieldset': { borderColor: '#1e2d45' },
+    bgcolor: infinitePillBg,
+    '& fieldset': { borderColor: infinitePillBorder },
     '&:hover fieldset': { borderColor: '#8b949e' },
     '&.Mui-focused fieldset': { borderColor: '#58a6ff' },
   },
@@ -118,8 +122,8 @@ const INFINITE_PILL_SELECT_SX = {
   height: 32,
   borderRadius: '20px',
   fontSize: '0.8rem',
-  bgcolor: '#081120',
-  '& .MuiOutlinedInput-notchedOutline': { borderColor: '#1e2d45' },
+  bgcolor: infinitePillBg,
+  '& .MuiOutlinedInput-notchedOutline': { borderColor: infinitePillBorder },
   '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#8b949e' },
   '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#58a6ff' },
   '& .MuiSelect-select': {
@@ -133,8 +137,8 @@ const INFINITE_PILL_SELECT_SX = {
   },
 };
 
-const INFINITE_BAND_LABEL_RED = '#ff9ea0';
-const INFINITE_BAND_LABEL_BLUE = '#9ecbff';
+const INFINITE_BAND_LABEL_RED = (theme) => (isDarkTheme(theme) ? '#ff9ea0' : '#cf222e');
+const INFINITE_BAND_LABEL_BLUE = (theme) => (isDarkTheme(theme) ? '#9ecbff' : '#0969da');
 
 const infiniteBandLabelColor = (index) => {
   if (index <= 1) return INFINITE_BAND_LABEL_RED;
@@ -666,8 +670,13 @@ const WatchlistRow = memo(({
 
 WatchlistRow.displayName = 'WatchlistRow';
 
+const DEFAULT_BUY_TOTAL_KR = 1000000;
+const DEFAULT_BUY_TOTAL_US = 1000;
+const DEFAULT_INFINITE_SEED_KR = '1000000';
+const DEFAULT_INFINITE_SEED_US = '1000';
+
 const Watchlist = ({ noContainer = false, hideActions = false }) => {
-  const defaultBuyTotal = 1000000;
+  const defaultBuyTotal = DEFAULT_BUY_TOTAL_KR;
   const apiBase = '/watchlist-v2';
   const currencySymbol = '원';
   const { user } = useAuth();
@@ -832,7 +841,9 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
     }
   }, [user?.id]);
 
-  const createDefaultRepeatAutoTradingForm = useCallback(() => ({
+  const createDefaultRepeatAutoTradingForm = useCallback((isUs = false) => {
+    const buyTotal = isUs ? DEFAULT_BUY_TOTAL_US : defaultBuyTotal;
+    return {
     maxStages: 5,
     autoTradingEnabled: true,
     // V2: 분할/무한 플랜별 활성(active) 여부 — 같은 종목 두 전략을 따로 on/off
@@ -846,7 +857,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
     buyTrailingStopPercent: '0.3',
                 // INFINITE_TRADE (저장: trading_plans)
                 infiniteEnabled: false,
-    seedAmount: '',
+    seedAmount: isUs ? DEFAULT_INFINITE_SEED_US : DEFAULT_INFINITE_SEED_KR,
     unitBuyAmount: '',
     buyStepPercent: '2',
     buyMultipliers: [...DEFAULT_INFINITE_BUY_MULTIPLIERS],
@@ -856,9 +867,9 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
     buyStages: Array(5).fill(null).map((_, i) => ({
       stage: i + 1,
       dropRate: i === 0 ? 2 : 5,
-      amount: defaultBuyTotal,
+      amount: buyTotal,
       buyPrice: 0,
-      buyTotal: defaultBuyTotal,
+      buyTotal,
       buyQty: 0,
       buyOrderNo: null,
       buyEnd: 'N',
@@ -869,7 +880,8 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
       sellPrice: 0,
       sellQty: 0,
     })),
-  }), [defaultBuyTotal]);
+    };
+  }, [defaultBuyTotal]);
 
   // 반복자동매매설정 다이얼로그가 열릴 때 기존 데이터 불러오기
   useEffect(() => {
@@ -877,7 +889,11 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
       let cancelled = false;
       const loadData = async () => {
         // 종목 전환 시 이전 종목(매수완료 등)이 잠깐이라도 남지 않게 즉시 초기화
-        setRepeatAutoTradingForm(createDefaultRepeatAutoTradingForm());
+        const isUs = isUsMarket(
+          targetBuyDialogStock.stockMarket || targetBuyDialogStock.market,
+          targetBuyDialogStock.stockCode
+        );
+        setRepeatAutoTradingForm(createDefaultRepeatAutoTradingForm(isUs));
         setAutoTradingLoadMessage('');
         setSwingResultMessage('');
 
@@ -891,7 +907,8 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
 
         // V2 trading_plans 로드
         if (savedData._source === 'v2') {
-          const defaults = createDefaultRepeatAutoTradingForm();
+          const defaults = createDefaultRepeatAutoTradingForm(isUs);
+          const stageDefaultBuyTotal = defaults.buyStages[0].buyTotal;
           const stages = savedData.stages || [];
           const buyByStage = new Map();
           const sellByStage = new Map();
@@ -955,7 +972,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
             return {
               stage: n,
               dropRate: dropMag,
-              buyTotal: st?.targetAmount != null ? st.targetAmount : defaultBuyTotal,
+              buyTotal: st?.targetAmount != null ? st.targetAmount : stageDefaultBuyTotal,
               buyPrice: st?.targetPrice != null ? st.targetPrice : 0,
               buyQty: st?.targetQty != null ? st.targetQty : 0,
               buyOrderNo: null,
@@ -995,7 +1012,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
             seedAmount:
               savedData.seedAmount != null && savedData.seedAmount !== ''
                 ? String(savedData.seedAmount)
-                : '',
+                : defaults.seedAmount,
             unitBuyAmount:
               savedData.unitBuyAmount != null && savedData.unitBuyAmount !== ''
                 ? String(savedData.unitBuyAmount)
@@ -1024,7 +1041,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
     }
     setAutoTradingLoadMessage('');
     return undefined;
-  }, [repeatAutoTradingDialogOpen, targetBuyDialogStock, loadAutoTradingData, createDefaultRepeatAutoTradingForm, defaultBuyTotal]);
+  }, [repeatAutoTradingDialogOpen, targetBuyDialogStock, loadAutoTradingData, createDefaultRepeatAutoTradingForm]);
   const [repeatAutoTradingForm, setRepeatAutoTradingForm] = useState(() => ({
     maxStages: 5, // 고정값
     autoTradingEnabled: true, // 자동매매 활성화 여부
@@ -3458,7 +3475,8 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
                     } else {
                       const { buyStages: calculatedBuyStages, sellStages: calculatedSellStages } =
                         calculateBuySellPrices(latestPrice);
-                      strategyConfig.defaultBuyTotal = buyStages[0]?.buyTotal || defaultBuyTotal;
+                      strategyConfig.defaultBuyTotal =
+                        buyStages[0]?.buyTotal || (dialogIsUs ? DEFAULT_BUY_TOTAL_US : defaultBuyTotal);
                       for (let i = 0; i < 5; i++) {
                         const b = buyStages[i];
                         const calcB = calculatedBuyStages[i];

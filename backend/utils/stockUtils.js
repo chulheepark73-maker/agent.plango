@@ -1,4 +1,3 @@
-const axios = require('axios');
 const { isFixedHolidayDate } = require('./holidays');
 
 /** 한국(Asia/Seoul) 기준 오늘 날짜 YYYY-MM-DD */
@@ -18,134 +17,10 @@ const isWeekend = () => {
   return dayOfWeek === 0 || dayOfWeek === 6; // 일요일(0) 또는 토요일(6)
 };
 
-// 휴일 확인 (한국 시간 기준, API 사용)
-// 캐시를 사용하여 같은 날에는 한 번만 API 호출
-let holidayCache = {
-  date: null,
-  isHoliday: false,
-  lastCheck: null
-};
+// 휴장일 확인 (한국 시간 기준, frontend/src/data/holidays.json 목록)
+const isHolidaySync = () => isFixedHolidayDate(getKoreaDateString());
 
-const isHoliday = async () => {
-  const now = new Date();
-  const koreaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-  const year = koreaTime.getFullYear();
-  const month = String(koreaTime.getMonth() + 1).padStart(2, '0');
-  const day = String(koreaTime.getDate()).padStart(2, '0');
-  const dateStr = `${year}-${month}-${day}`;
-  
-  // 캐시 확인: 같은 날짜이고 오늘 체크했다면 캐시 사용
-  if (holidayCache.date === dateStr && holidayCache.lastCheck) {
-    const hoursSinceCheck = (now - holidayCache.lastCheck) / (1000 * 60 * 60);
-    if (hoursSinceCheck < 24) { // 24시간 이내면 캐시 사용
-      return holidayCache.isHoliday;
-    }
-  }
-  
-  try {
-    const apiKey = process.env.DATA_GO_KR_API_KEY;
-    
-    // API 키가 있으면 공공데이터포털 API 사용
-    if (apiKey) {
-      try {
-        // 공공데이터포털 특일정보 API (한국천문연구원)
-        const apiUrl = 'http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getHoliDeInfo';
-        const response = await axios.get(apiUrl, {
-          params: {
-            ServiceKey: apiKey, // 공공데이터포털 API 키
-            solYear: year,
-            solMonth: month,
-            numOfRows: 31,
-            _type: 'json' // JSON 형식 응답 요청
-          },
-          timeout: 5000
-        });
-        
-        // API 응답 처리
-        if (response.data?.response?.body?.items) {
-          const items = response.data.response.body.items;
-          
-          // item이 있는지 확인
-          if (items.item) {
-            const holidays = Array.isArray(items.item) 
-              ? items.item 
-              : [items.item];
-            
-            // 해당 날짜가 휴일인지 확인 (locdate 형식: YYYYMMDD)
-            const targetDateStr = `${year}${month}${day}`;
-            const isHolidayResult = holidays.some(holiday => {
-              const holidayDate = String(holiday.locdate || '');
-              // isHoliday가 'Y'인 경우만 휴일로 간주 (공휴일만)
-              return holidayDate === targetDateStr && (holiday.isHoliday === 'Y' || holiday.isHoliday === '1');
-            });
-            
-            // 캐시 업데이트
-            holidayCache = {
-              date: dateStr,
-              isHoliday: isHolidayResult,
-              lastCheck: now
-            };
-            
-            console.log(`[휴일 확인] API 호출 성공: ${dateStr} = ${isHolidayResult ? '휴일' : '평일'}`);
-            return isHolidayResult;
-          } else {
-            // 해당 월에 휴일이 없는 경우
-            console.log(`[휴일 확인] API 호출 성공: ${dateStr} = 평일 (휴일 없음)`);
-            holidayCache = {
-              date: dateStr,
-              isHoliday: false,
-              lastCheck: now
-            };
-            return false;
-          }
-        } else {
-          console.warn('[휴일 확인] API 응답 형식 오류:', response.data);
-          // API 응답 형식 오류 시 기본 휴일 목록으로 fallback
-        }
-      } catch (apiError) {
-        console.error('[휴일 확인] API 호출 실패:', apiError.message);
-        // API 호출 실패 시 기본 휴일 목록으로 fallback
-      }
-    }
-    
-    // API 키가 없거나 API 호출 실패 시 공유 휴일 목록 사용 (fallback)
-    const isHolidayResult = isFixedHolidayDate(dateStr);
-    
-    // 캐시 업데이트
-    holidayCache = {
-      date: dateStr,
-      isHoliday: isHolidayResult,
-      lastCheck: now
-    };
-    
-    if (!apiKey) {
-      console.log(`[휴일 확인] API 키 없음, 기본 목록 사용: ${dateStr} = ${isHolidayResult ? '휴일' : '평일'}`);
-    }
-    
-    return isHolidayResult;
-  } catch (error) {
-    console.error('[휴일 확인] 예외 발생:', error.message);
-    // 예외 발생 시 false 반환 (거래 가능한 것으로 가정)
-    return false;
-  }
-};
-
-// 동기 방식 휴일 확인 (캐시만 사용, 빠른 응답)
-const isHolidaySync = () => {
-  const now = new Date();
-  const koreaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-  const year = koreaTime.getFullYear();
-  const month = String(koreaTime.getMonth() + 1).padStart(2, '0');
-  const day = String(koreaTime.getDate()).padStart(2, '0');
-  const dateStr = `${year}-${month}-${day}`;
-  
-  // 캐시가 있고 오늘 날짜면 캐시 사용
-  if (holidayCache.date === dateStr) {
-    return holidayCache.isHoliday;
-  }
-  
-  return isFixedHolidayDate(dateStr);
-};
+const isHoliday = async () => isHolidaySync();
 
 // 거래시간 확인 (한국 시간 기준 09:00-15:30 정규장)
 const isTradingHours = () => {

@@ -1,6 +1,8 @@
 /**
- * 에이전트 페어링 정보 (backend/data/agent.json)
- * { ownerUserId, ownerUsername, ownerEmail, agentId, agentSecret, pairedAt, lastSubscription }
+ * 에이전트 주인·서버 등록 정보 (backend/data/agent.json)
+ * - 주인: 첫 로그인 계정 { ownerUserId, ownerUsername, ownerEmail, ownerSince }
+ * - 서버 등록: '서버 등록' 메뉴에서 중앙 발급 { agentId, agentSecret, registeredAt }
+ * - { lastSubscription, lastSyncedAt }
  */
 const fs = require('fs');
 const path = require('path');
@@ -43,7 +45,10 @@ const getOwnerUserId = () => {
   return id != null && id !== '' ? String(id) : null;
 };
 
-const isPaired = () => {
+const hasOwner = () => !!getOwnerUserId();
+
+/** 중앙 서버에 에이전트 키가 등록되어 있는지 */
+const isRegistered = () => {
   const a = loadAgentIdentity();
   return !!(a.ownerUserId && a.agentId && a.agentSecret);
 };
@@ -59,6 +64,7 @@ module.exports = {
   saveAgentIdentity,
   clearAgentIdentity,
   getOwnerUserId,
-  isPaired,
+  hasOwner,
+  isRegistered,
   isOwner,
 };

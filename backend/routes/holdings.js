@@ -3,7 +3,6 @@ const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
 const { getUserById } = require('../utils/userStore');
 const kiwoomAPI = require('../services/kiwoomApi');
-const { getAllCompletedBuy, updateSellCompleted } = require('../utils/completedBuyStore');
 const { isNXTStock } = require('../utils/stockListStore');
 const { getKiwoomInfo, validateKiwoomInfo } = require('../utils/kiwoomUtils');
 const { isUsMarket, normalizeAutoCode, looksLikeUsTicker } = require('../utils/autoTradingMarket');
@@ -344,26 +343,6 @@ router.get('/prices', authenticateToken, async (req, res) => {
   }
 });
 
-
-// 보유종목 제거 (sell_completed를 'Y'로 변경)
-router.delete('/:stockCode', authenticateToken, async (req, res) => {
-  try {
-    const { stockCode } = req.params;
-    
-    const updated = await updateSellCompleted(req.user.userId, stockCode, true);
-    if (!updated) {
-      return res.status(404).json({ error: '해당 종목을 찾을 수 없습니다.' });
-    }
-    
-    res.json({ message: '보유종목에서 제거되었습니다.' });
-  } catch (error) {
-    console.error('[보유종목] 제거 실패:', error);
-    res.status(500).json({
-      error: '보유종목 제거 중 오류가 발생했습니다.',
-      message: error.message
-    });
-  }
-});
 
 // Trade History 조회 (Trading V2 SELL 체결)
 router.get('/trade-history', authenticateToken, async (req, res) => {

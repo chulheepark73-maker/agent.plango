@@ -1,24 +1,9 @@
-const pool = require('./db');
+const pool = require('./tradingDb');
 const { normalizeKrSymbol, ETF_LIKE_MRKT_TPS, isEtfLikeMrktTp } = require('./krMrktTp');
-
-let mrktTpColumnPromise = null;
-
-const ensureStockListMrktTpColumn = async () => {
-  if (!mrktTpColumnPromise) {
-    mrktTpColumnPromise = pool
-      .query(`ALTER TABLE stock_list ADD COLUMN IF NOT EXISTS mrkt_tp VARCHAR(10)`)
-      .catch((err) => {
-        mrktTpColumnPromise = null;
-        throw err;
-      });
-  }
-  await mrktTpColumnPromise;
-};
 
 /** stock_list 조회용 — 6자리 정규화 코드로 mrkt_tp 찾기 */
 const getKrMrktTp = async (symbol) => {
   try {
-    await ensureStockListMrktTpColumn();
     const code = normalizeKrSymbol(symbol);
     if (!code) return null;
     const result = await pool.query(
@@ -27,7 +12,7 @@ const getKrMrktTp = async (symbol) => {
          AND mrkt_tp <> ''
          AND (
            UPPER(TRIM(stock_code)) = $1
-           OR UPPER(LEFT(regexp_replace(TRIM(stock_code), '(_NX|_AL)$', '', 'i'), 6)) = $1
+           OR UPPER(SUBSTR(TRIM(stock_code), 1, 6)) = $1
          )
        ORDER BY
          CASE WHEN UPPER(TRIM(stock_code)) = $1 THEN 0 ELSE 1 END,
@@ -99,7 +84,6 @@ const normalizeStockListForWrite = (stockList) => {
 // 종목 목록 파일 쓰기
 const writeStockListFile = async (stockList) => {
   try {
-    await ensureStockListMrktTpColumn();
     const normalized = normalizeStockListForWrite(stockList);
     const client = await pool.connect();
     try {

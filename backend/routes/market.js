@@ -4,8 +4,6 @@ const { authenticateToken } = require('../middleware/auth');
 const kiwoomAPI = require('../services/kiwoomApi');
 const { getKiwoomInfo, validateKiwoomInfo } = require('../utils/kiwoomUtils');
 const { extractStockName } = require('../utils/stockUtils');
-const { getDailyTradingStocks } = require('../utils/dailyTradingStocksStore');
-const { fetchAndSaveTopTradingStocks } = require('../utils/dailyTradingStocksScheduler');
 const { computeSwingBuyDropRates } = require('../utils/swingLowLevels');
 const { computeSwingSellProfitRates } = require('../utils/swingHighLevels');
 const { searchStocks } = require('../utils/stockSearchStore');
@@ -229,83 +227,6 @@ router.get('/top-trading-value', authenticateToken, async (req, res) => {
     res.status(error.status || 500).json({
       error: error.message || '거래대금 상위 종목 조회 중 오류가 발생했습니다.',
       data: error.data
-    });
-  }
-});
-
-// 특정 날짜의 거래대금 상위 종목 조회 (DB에서)
-router.get('/daily-trading-stocks', authenticateToken, async (req, res) => {
-  try {
-    let targetDate;
-    
-    // 쿼리 파라미터에서 날짜 가져오기 (YYYY-MM-DD 형식)
-    if (req.query.date) {
-      // 날짜 문자열을 Date 객체로 변환
-      targetDate = new Date(req.query.date + 'T00:00:00Z');
-      // 유효한 날짜인지 확인
-      if (isNaN(targetDate.getTime())) {
-        return res.status(400).json({
-          error: '잘못된 날짜 형식입니다. YYYY-MM-DD 형식을 사용해주세요.'
-        });
-      }
-    } else {
-      // 날짜 파라미터가 없으면 오늘 날짜 (한국 시간 기준)
-      const now = new Date();
-      // 한국 시간대(UTC+9) 계산: 현재 UTC 시간에 9시간 추가
-      const koreaTimeOffset = 9 * 60 * 60 * 1000; // 9시간을 밀리초로
-      const koreaTime = new Date(now.getTime() + koreaTimeOffset);
-      
-      // 한국 시간 기준으로 날짜 문자열 생성 (YYYY-MM-DD)
-      const year = koreaTime.getUTCFullYear();
-      const month = String(koreaTime.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(koreaTime.getUTCDate()).padStart(2, '0');
-      const dateString = `${year}-${month}-${day}`;
-      targetDate = new Date(dateString + 'T00:00:00Z');
-    }
-    
-    const stocks = await getDailyTradingStocks(targetDate);
-    
-    // DB 형식을 프론트엔드 형식으로 변환
-    const formattedStocks = stocks.map(stock => ({
-      stockCode: stock.stock_code,
-      stockName: stock.stock_name,
-      price: stock.price,
-      volume: stock.volume,
-      tradingValue: stock.trading_value,
-      sector: stock.sector || '기타',
-      prevChange: stock.prev_change || 0,
-      prevVolume: stock.prev_volume || 0,
-      isDecreased: stock.is_decreased || false,
-      decreaseRate: stock.decrease_rate || 0
-    }));
-    
-    res.json({
-      stocks: formattedStocks,
-      date: targetDate.toISOString().split('T')[0],
-      count: formattedStocks.length
-    });
-  } catch (error) {
-    console.error('[일일 거래대금 상위 종목] 조회 실패:', error);
-    res.status(500).json({
-      error: error.message || '일일 거래대금 상위 종목 조회 중 오류가 발생했습니다.'
-    });
-  }
-});
-
-// 스케줄러 수동 실행 (관리자용)
-router.post('/daily-trading-stocks/run-scheduler', authenticateToken, async (req, res) => {
-  try {
-    console.log('[API] 스케줄러 수동 실행 요청');
-    await fetchAndSaveTopTradingStocks();
-    res.json({
-      message: '스케줄러가 성공적으로 실행되었습니다.',
-      success: true
-    });
-  } catch (error) {
-    console.error('[API] 스케줄러 수동 실행 실패:', error);
-    res.status(500).json({
-      error: error.message || '스케줄러 실행 중 오류가 발생했습니다.',
-      success: false
     });
   }
 });

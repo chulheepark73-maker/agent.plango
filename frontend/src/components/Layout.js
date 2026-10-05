@@ -13,6 +13,10 @@ import {
   DialogContentText,
   DialogActions,
   Button,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
   useTheme,
 } from '@mui/material';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -22,7 +26,17 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import CandlestickChartIcon from '@mui/icons-material/CandlestickChart';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import AssessmentIcon from '@mui/icons-material/Assessment';
+import DnsIcon from '@mui/icons-material/Dns';
+import StorageIcon from '@mui/icons-material/Storage';
+import LocalOfferIcon from '@mui/icons-material/LocalOffer';
+import CardMembershipIcon from '@mui/icons-material/CardMembership';
+import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
+import LockResetIcon from '@mui/icons-material/LockReset';
+import TelegramIcon from '@mui/icons-material/Telegram';
+import LightModeIcon from '@mui/icons-material/LightMode';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
 import { useAuth } from '../contexts/AuthContext';
+import { useThemeMode } from '../contexts/ThemeModeContext';
 
 // light / dark AppBar 대비에 맞춘 아이콘 색
 const menuItems = [
@@ -51,11 +65,39 @@ const menuItems = [
   {
     Icon: SettingsIcon,
     path: '/settings',
-    tooltip: '나의 환경설정',
+    tooltip: '환경설정',
     iconColorLight: '#e65100',
     iconColorDark: '#ff9800',
   },
 ];
+
+const sideMenuGroups = [
+  {
+    title: '서버',
+    items: [
+      { Icon: DnsIcon, path: '/server-registration', label: '서버등록' },
+      { Icon: StorageIcon, path: '/server-management', label: '서버관리' },
+    ],
+  },
+  {
+    title: '구독서비스',
+    items: [
+      { Icon: LocalOfferIcon, path: '/subscription-plans', label: '구독플랜' },
+      { Icon: CardMembershipIcon, path: '/subscription-apply', label: '구독신청' },
+    ],
+  },
+  {
+    title: '개인정보',
+    items: [
+      { Icon: ManageAccountsIcon, path: '/profile', label: '정보수정' },
+      { Icon: TelegramIcon, path: '/telegram-settings', label: '텔레그램 설정' },
+      { Icon: LockResetIcon, path: '/change-password', label: '비밀번호변경' },
+    ],
+  },
+];
+
+const SIDEBAR_WIDTH = 180;
+const APPBAR_HEIGHT = 64;
 
 const Layout = () => {
   const navigate = useNavigate();
@@ -63,7 +105,12 @@ const Layout = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const { logout } = useAuth();
+  const { setThemeMode } = useThemeMode();
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+
+  const handleThemeToggle = useCallback(() => {
+    setThemeMode(isDark ? 'white' : 'dark').catch(() => {});
+  }, [isDark, setThemeMode]);
 
   const handleMenuClick = useCallback((path) => {
     navigate(path);
@@ -92,7 +139,7 @@ const Layout = () => {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Typography variant="h5" component="div" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
               <CandlestickChartIcon sx={{ fontSize: '1.4rem' }} />
-              PlanGo.Today Agent Client
+              PlanGo.Today Agent
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
@@ -127,6 +174,20 @@ const Layout = () => {
               </Tooltip>
             );
           })}
+          <Tooltip title={isDark ? 'Light 모드로 전환' : 'Dark 모드로 전환'} arrow>
+            <IconButton
+              color="inherit"
+              onClick={handleThemeToggle}
+              sx={{
+                color: 'text.primary',
+                '&:hover': {
+                  backgroundColor: 'action.hover',
+                },
+              }}
+            >
+              {isDark ? <LightModeIcon /> : <DarkModeIcon />}
+            </IconButton>
+          </Tooltip>
           <Tooltip title="로그아웃" arrow>
             <IconButton
               color="inherit"
@@ -152,7 +213,8 @@ const Layout = () => {
         aria-labelledby="logout-dialog-title"
         aria-describedby="logout-dialog-description"
       >
-        <DialogTitle id="logout-dialog-title">
+        <DialogTitle id="logout-dialog-title" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <LogoutIcon color="primary" />
           로그아웃 확인
         </DialogTitle>
         <DialogContent>
@@ -160,7 +222,7 @@ const Layout = () => {
             정말 로그아웃 하시겠습니까?
           </DialogContentText>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
           <Button onClick={handleLogoutCancel} color="primary">
             취소
           </Button>
@@ -170,13 +232,65 @@ const Layout = () => {
         </DialogActions>
       </Dialog>
       <Box
+        component="nav"
+        sx={{
+          position: 'fixed',
+          top: APPBAR_HEIGHT,
+          left: 0,
+          bottom: 0,
+          width: SIDEBAR_WIDTH,
+          borderRight: 1,
+          borderColor: 'divider',
+          bgcolor: 'background.paper',
+          overflowY: 'auto',
+          zIndex: (t) => t.zIndex.appBar - 1,
+        }}
+      >
+        {sideMenuGroups.map((group) => (
+          <List
+            key={group.title}
+            dense
+            sx={{ py: 0.5 }}
+            subheader={
+              <Typography
+                variant="body2"
+                sx={{ px: 2, pt: 1.5, pb: 0.75, color: 'text.secondary', fontWeight: 500 }}
+              >
+                {group.title}
+              </Typography>
+            }
+          >
+            {group.items.map((item) => (
+              <ListItemButton
+                key={item.path}
+                selected={isActive(item.path)}
+                onClick={() => handleMenuClick(item.path)}
+                sx={{
+                  mx: 1,
+                  borderRadius: 1.5,
+                  '&.Mui-selected': {
+                    bgcolor: isDark ? 'rgba(144, 202, 249, 0.16)' : 'rgba(25, 118, 210, 0.12)',
+                  },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 36, color: 'text.primary' }}>
+                  <item.Icon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary={item.label} />
+              </ListItemButton>
+            ))}
+          </List>
+        ))}
+      </Box>
+      <Box
         component="main"
         sx={{
           flexGrow: 1,
           p: 3,
-          width: '100%',
-          mt: '64px', // AppBar 높이만큼 여백
-          minHeight: 'calc(100vh - 64px)', // 전체 화면 높이
+          ml: `${SIDEBAR_WIDTH}px`,
+          width: `calc(100% - ${SIDEBAR_WIDTH}px)`,
+          mt: `${APPBAR_HEIGHT}px`,
+          minHeight: `calc(100vh - ${APPBAR_HEIGHT}px)`,
           backgroundColor: 'background.default', // 테마의 배경색 사용
         }}
       >

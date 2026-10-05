@@ -3,7 +3,6 @@ import {
   Alert,
   Box,
   CircularProgress,
-  Container,
   Grid,
   MenuItem,
   Paper,
@@ -37,6 +36,7 @@ import {
   YAxis,
 } from 'recharts';
 import apiClient from '../utils/axios';
+import PageFrame from '../components/PageFrame';
 import { formatNumber } from '../utils/formatUtils';
 import { calculateProfit, DEFAULT_FEE_RATES } from '../utils/profitUtils';
 
@@ -279,7 +279,7 @@ const Report = () => {
   ];
 
   return (
-    <Container maxWidth="xl" sx={{ bgcolor: 'background.default', minHeight: '100%' }}>
+    <PageFrame>
       <Paper elevation={0} sx={{ ...paperSx, height: 'auto', mb: 2, px: 2, py: 1.25 }}>
         <Box display="flex" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}>
           <Typography
@@ -560,7 +560,7 @@ const Report = () => {
           </Grid>
         </>
       )}
-    </Container>
+    </PageFrame>
   );
 };
 

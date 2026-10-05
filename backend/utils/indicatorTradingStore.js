@@ -2,9 +2,10 @@
  * 지표기반매매 설정·상태 (사용자별, 컬럼 저장)
  */
 
-const pool = require('./db');
+const pool = require('./tradingDb');
 
-let tableReady = false;
+/** 스키마는 db/trading_schema.sql 에서 생성된다 */
+const ensureTable = async () => {};
 
 const DEFAULT_SETTINGS = {
   buyAmountKrw: 1000000,
@@ -123,148 +124,6 @@ const SELECT_COLUMNS = `
   user_id, ${columnList}, tracking_stocks,
   auto_trading_enabled, api_connected, stock_info_loaded_count, updated_at
 `;
-
-const ensureTable = async () => {
-  if (tableReady) return;
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS indicator_trading (
-      user_id VARCHAR(50) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-      buy_amount_krw NUMERIC(14, 0) NOT NULL DEFAULT 1000000,
-      buy_condition VARCHAR(100) NOT NULL DEFAULT '',
-      buy_time_start VARCHAR(8) NOT NULL DEFAULT '15:00',
-      buy_time_end VARCHAR(8) NOT NULL DEFAULT '15:20',
-      use_split_buy BOOLEAN NOT NULL DEFAULT false,
-      buy_end_market_fill BOOLEAN NOT NULL DEFAULT false,
-      buy_limit_tick_offset INTEGER NOT NULL DEFAULT 2,
-      sell_limit_tick_offset INTEGER NOT NULL DEFAULT 2,
-      use_take_profit BOOLEAN NOT NULL DEFAULT true,
-      take_profit_percent NUMERIC(8, 2) NOT NULL DEFAULT 1.5,
-      use_stop_loss BOOLEAN NOT NULL DEFAULT true,
-      stop_loss_percent NUMERIC(8, 2) NOT NULL DEFAULT -1,
-      use_trailing_stop BOOLEAN NOT NULL DEFAULT false,
-      trailing_stop_on_percent NUMERIC(8, 2) NOT NULL DEFAULT 2,
-      trailing_stop_from_high_percent NUMERIC(8, 2) NOT NULL DEFAULT -1,
-      use_daily_ma_sell BOOLEAN NOT NULL DEFAULT false,
-      daily_sell_ma INTEGER NOT NULL DEFAULT 20,
-      use_minute_ma_sell BOOLEAN NOT NULL DEFAULT false,
-      minute_chart_setting INTEGER NOT NULL DEFAULT 3,
-      minute_sell_ma INTEGER NOT NULL DEFAULT 20,
-      max_tracking_stocks INTEGER NOT NULL DEFAULT 90,
-      max_holding_stocks INTEGER NOT NULL DEFAULT 5,
-      max_usage_amount_krw NUMERIC(14, 0) NOT NULL DEFAULT 10000000,
-      tracking_stocks JSONB NOT NULL DEFAULT '[]',
-      auto_trading_enabled BOOLEAN NOT NULL DEFAULT false,
-      api_connected BOOLEAN NOT NULL DEFAULT false,
-      stock_info_loaded_count INTEGER NOT NULL DEFAULT 0,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  const alters = [
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS buy_amount_krw NUMERIC(14, 0) NOT NULL DEFAULT 1000000`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS buy_condition VARCHAR(100) NOT NULL DEFAULT ''`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS buy_time_start VARCHAR(8) NOT NULL DEFAULT '15:00'`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS buy_time_end VARCHAR(8) NOT NULL DEFAULT '15:20'`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS use_split_buy BOOLEAN NOT NULL DEFAULT false`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS buy_end_market_fill BOOLEAN NOT NULL DEFAULT false`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS buy_limit_tick_offset INTEGER NOT NULL DEFAULT 2`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS sell_limit_tick_offset INTEGER NOT NULL DEFAULT 2`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS use_take_profit BOOLEAN NOT NULL DEFAULT true`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS take_profit_percent NUMERIC(8, 2) NOT NULL DEFAULT 1.5`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS use_stop_loss BOOLEAN NOT NULL DEFAULT true`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS stop_loss_percent NUMERIC(8, 2) NOT NULL DEFAULT -1`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS use_trailing_stop BOOLEAN NOT NULL DEFAULT false`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS trailing_stop_on_percent NUMERIC(8, 2) NOT NULL DEFAULT 2`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS trailing_stop_from_high_percent NUMERIC(8, 2) NOT NULL DEFAULT -1`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS use_daily_ma_sell BOOLEAN NOT NULL DEFAULT false`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS daily_sell_ma INTEGER NOT NULL DEFAULT 20`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS use_minute_ma_sell BOOLEAN NOT NULL DEFAULT false`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS minute_chart_setting INTEGER NOT NULL DEFAULT 3`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS minute_sell_ma INTEGER NOT NULL DEFAULT 20`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS max_tracking_stocks INTEGER NOT NULL DEFAULT 90`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS max_holding_stocks INTEGER NOT NULL DEFAULT 5`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS max_usage_amount_krw NUMERIC(14, 0) NOT NULL DEFAULT 10000000`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS tracking_stocks JSONB NOT NULL DEFAULT '[]'`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS auto_trading_enabled BOOLEAN NOT NULL DEFAULT false`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS api_connected BOOLEAN NOT NULL DEFAULT false`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS stock_info_loaded_count INTEGER NOT NULL DEFAULT 0`,
-    `ALTER TABLE indicator_trading ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
-  ];
-  for (const sql of alters) {
-    await pool.query(sql);
-  }
-
-  // 시장가 매수/매도 설정 컬럼 제거 (지정가 전용)
-  await pool.query(`ALTER TABLE indicator_trading DROP COLUMN IF EXISTS buy_market_order`).catch(() => {});
-  await pool.query(`ALTER TABLE indicator_trading DROP COLUMN IF EXISTS sell_market_order`).catch(() => {});
-
-  await pool.query(
-    `ALTER TABLE indicator_trading ALTER COLUMN buy_condition TYPE VARCHAR(100)`
-  ).catch(() => {});
-  await pool.query(
-    `ALTER TABLE indicator_trading ALTER COLUMN buy_condition SET DEFAULT ''`
-  ).catch(() => {});
-  await pool.query(
-    `ALTER TABLE indicator_trading ALTER COLUMN max_tracking_stocks SET DEFAULT 90`
-  ).catch(() => {});
-  await pool.query(
-    `ALTER TABLE indicator_trading ALTER COLUMN buy_time_start SET DEFAULT '15:00'`
-  ).catch(() => {});
-  await pool.query(
-    `ALTER TABLE indicator_trading ALTER COLUMN buy_time_end SET DEFAULT '15:20'`
-  ).catch(() => {});
-  // 기존 NULL/빈 값 → 기본 매수시간
-  await pool.query(
-    `UPDATE indicator_trading SET buy_time_start = '15:00'
-     WHERE buy_time_start IS NULL OR TRIM(buy_time_start) = ''`
-  ).catch(() => {});
-  await pool.query(
-    `UPDATE indicator_trading SET buy_time_end = '15:20'
-     WHERE buy_time_end IS NULL OR TRIM(buy_time_end) = ''`
-  ).catch(() => {});
-
-  // 체결강도·프로그램순매수·미체결정정 설정 컬럼 제거
-  await pool.query(`ALTER TABLE indicator_trading DROP COLUMN IF EXISTS buy_execution_strength`).catch(() => {});
-  await pool.query(`ALTER TABLE indicator_trading DROP COLUMN IF EXISTS min_program_net_buy_krw`).catch(() => {});
-  await pool.query(`ALTER TABLE indicator_trading DROP COLUMN IF EXISTS amend_cancel_wait_sec`).catch(() => {});
-  await pool.query(`ALTER TABLE indicator_trading DROP COLUMN IF EXISTS unfilled_action`).catch(() => {});
-
-  // 자동매매 가능 시간 설정 제거 — 거래시간은 KRX/NXT 장시간 기준으로 판단
-  await pool.query(`ALTER TABLE indicator_trading DROP COLUMN IF EXISTS market_open_time`).catch(() => {});
-  await pool.query(`ALTER TABLE indicator_trading DROP COLUMN IF EXISTS market_close_time`).catch(() => {});
-
-  const settingsCol = await pool.query(
-    `SELECT 1 FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = 'indicator_trading' AND column_name = 'settings'`
-  );
-  if (settingsCol.rows.length > 0) {
-    await pool.query(`
-      UPDATE indicator_trading SET
-        buy_amount_krw = COALESCE(NULLIF(settings->>'buyAmountKrw', '')::numeric, buy_amount_krw),
-        buy_condition = COALESCE(NULLIF(settings->>'buyCondition', ''), buy_condition),
-        buy_limit_tick_offset = COALESCE(NULLIF(settings->>'buyLimitTickOffset', '')::integer, buy_limit_tick_offset),
-        sell_limit_tick_offset = COALESCE(NULLIF(settings->>'sellLimitTickOffset', '')::integer, sell_limit_tick_offset),
-        use_take_profit = CASE WHEN settings->>'useTakeProfit' IN ('true', 'false') THEN (settings->>'useTakeProfit')::boolean ELSE use_take_profit END,
-        take_profit_percent = COALESCE(NULLIF(settings->>'takeProfitPercent', '')::numeric, take_profit_percent),
-        use_stop_loss = CASE WHEN settings->>'useStopLoss' IN ('true', 'false') THEN (settings->>'useStopLoss')::boolean ELSE use_stop_loss END,
-        stop_loss_percent = COALESCE(NULLIF(settings->>'stopLossPercent', '')::numeric, stop_loss_percent),
-        use_trailing_stop = CASE WHEN settings->>'useTrailingStop' IN ('true', 'false') THEN (settings->>'useTrailingStop')::boolean ELSE use_trailing_stop END,
-        trailing_stop_on_percent = COALESCE(NULLIF(settings->>'trailingStopOnPercent', '')::numeric, trailing_stop_on_percent),
-        trailing_stop_from_high_percent = COALESCE(NULLIF(settings->>'trailingStopFromHighPercent', '')::numeric, trailing_stop_from_high_percent),
-        daily_sell_ma = COALESCE(NULLIF(settings->>'dailySellMa', '')::integer, daily_sell_ma),
-        minute_chart_setting = COALESCE(NULLIF(settings->>'minuteChartSetting', '')::integer, minute_chart_setting),
-        minute_sell_ma = COALESCE(NULLIF(settings->>'minuteSellMa', '')::integer, minute_sell_ma),
-        max_tracking_stocks = COALESCE(NULLIF(settings->>'maxTrackingStocks', '')::integer, max_tracking_stocks),
-        max_holding_stocks = COALESCE(NULLIF(settings->>'maxHoldingStocks', '')::integer, max_holding_stocks),
-        max_usage_amount_krw = COALESCE(NULLIF(settings->>'maxUsageAmountKrw', '')::numeric, max_usage_amount_krw)
-      WHERE settings IS NOT NULL AND settings <> '{}'::jsonb
-    `);
-    await pool.query('ALTER TABLE indicator_trading DROP COLUMN IF EXISTS settings');
-  }
-
-  tableReady = true;
-};
 
 const toPublicRow = (row) => {
   if (!row) {

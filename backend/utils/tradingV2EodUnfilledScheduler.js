@@ -5,7 +5,7 @@
  */
 
 const cron = require('node-cron');
-const pool = require('./db');
+const pool = require('./tradingDb');
 const { getAllUsers } = require('./userStore');
 const { getKiwoomInfo } = require('./kiwoomUtils');
 const { ensureTradingV2Tables } = require('./tradingV2Store');
@@ -92,21 +92,26 @@ const markOrderCancelledAndReopenStage = async (order) => {
 const reopenOrphanOrderedStages = async (userId) => {
   const uid = String(userId);
   const res = await pool.query(
-    `UPDATE trading_stages s
-     SET status = 'pending', updated_at = CURRENT_TIMESTAMP
-     FROM trading_cycles c
+    `SELECT s.id, s.side, s.stage, c.trading_id AS plan_id
+     FROM trading_stages s
+     JOIN trading_cycles c ON c.id = s.cycle_id
      JOIN trading_plans p ON p.id = c.trading_id
-     WHERE s.cycle_id = c.id
-       AND p.user_id = $1
+     WHERE p.user_id = $1
        AND UPPER(COALESCE(p.strategy_type, '')) = 'SPLIT_TRADE'
        AND s.status = 'ordered'
        AND NOT EXISTS (
          SELECT 1 FROM trading_orders o
          WHERE o.stage_id = s.id
            AND o.status IN ('pending', 'submitted', 'partial')
-       )
-     RETURNING s.id, s.side, s.stage, c.trading_id AS plan_id`,
+       )`,
     [uid]
+  );
+  if (!res.rows.length) return [];
+  await pool.query(
+    `UPDATE trading_stages
+     SET status = 'pending', updated_at = CURRENT_TIMESTAMP
+     WHERE id = ANY($1) AND status = 'ordered'`,
+    [res.rows.map((row) => Number(row.id))]
   );
   return res.rows.map((row) => ({
     stageId: Number(row.id),

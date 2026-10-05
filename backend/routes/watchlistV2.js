@@ -16,7 +16,6 @@ const { isEtfLikeMrktTp } = require('../utils/krMrktTp');
 const { getKiwoomInfo, validateKiwoomInfo, normalizeStockCode, createStockCodeMap } = require('../utils/kiwoomUtils');
 const { extractPriceData, isKRXSessionOpen, isNXTTradingHours } = require('../utils/stockUtils');
 const { writeUsStockList } = require('../utils/usStockListStore');
-const { getUserById } = require('../utils/userStore');
 const kiwoomAPI = require('../services/kiwoomApi');
 
 router.use(authenticateToken);
@@ -87,14 +86,9 @@ router.post('/update-stock-list', async (req, res) => {
   }
 });
 
-/** 미국 종목 마스터 갱신 (admin) — usa10099 → us_stock_list */
+/** 미국 종목 마스터 갱신 — usa10099 → us_stock_list */
 router.post('/update-us-stock-list', async (req, res) => {
   try {
-    const user = await getUserById(req.user.userId);
-    if (!user?.username || String(user.username).toLowerCase() !== 'admin') {
-      return res.status(403).json({ error: '관리자만 미국 종목 목록을 업데이트할 수 있습니다.' });
-    }
-
     const kiwoomInfo = await getKiwoomInfo(req.user.userId);
     const validationError = validateKiwoomInfo(kiwoomInfo);
     if (validationError) {

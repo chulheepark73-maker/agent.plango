@@ -3,7 +3,7 @@
  * - 회원 원본은 중앙 서버. 로컬 users 행은 FK(trading_plans 등) 유지를 위한 미러.
  * - getUserById / getAllUsers 는 페어링된 주인만 반환.
  */
-const pool = require('./db');
+const pool = require('./tradingDb');
 const { getOwnerUserId, isOwner } = require('./agentIdentity');
 
 const CENTRAL_PASSWORD_PLACEHOLDER = '!central-managed';

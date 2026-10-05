@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import {
-  Container,
   Grid,
   Typography,
   Box,
@@ -38,6 +37,7 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import { alpha } from '@mui/material/styles';
 import apiClient from '../utils/axios';
 import { formatNumber, formatChangeRate, formatUsMoney } from '../utils/formatUtils';
+import { useAuth } from '../contexts/AuthContext';
 import { calculateProfit, DEFAULT_FEE_RATES } from '../utils/profitUtils';
 import { isTradingHours, isNXTTradingHours, isKRXAfterMarketHours, isKRXExtendedCloseHours, isKRXSessionOpen, isWeekend, isHolidaySync } from '../utils/tradingHours';
 import { connectPricesWs } from '../utils/watchlistPricesWs';
@@ -47,6 +47,7 @@ import StockLogo from '../components/StockLogo';
 import FlagIcon from '../components/FlagIcon';
 import LiquidateDialog from '../components/LiquidateDialog';
 import MarketSessionStatusBar from '../components/MarketSessionStatusBar';
+import PageFrame from '../components/PageFrame';
 import { isUsMarket } from '../utils/marketUtils';
 
 /** Trading V2 plan → 차트 매수라인 / B·S 마커 (분할매매만) */
@@ -848,6 +849,7 @@ const StockCard = memo(({
 StockCard.displayName = 'StockCard';
 
 const Dashboard = () => {
+  const { user } = useAuth();
   // 매수종목 관련 상태
   const [holdings, setHoldings] = useState([]);
   const [holdingsPrices, setHoldingsPrices] = useState([]);
@@ -1571,7 +1573,7 @@ const Dashboard = () => {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ bgcolor: 'background.default', minHeight: '100%' }}>
+    <PageFrame>
       <Paper sx={{ px: 2, py: 1.25, mb: 2 }}>
         <Box
           sx={{
@@ -1585,6 +1587,11 @@ const Dashboard = () => {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <DashboardIcon sx={{ fontSize: '1.05rem', color: '#80cbc4' }} />
             <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+              {user && (
+                <Box component="span" sx={{ fontWeight: 'normal', mr: 0.75 }}>
+                  {user.username || user.email}
+                </Box>
+              )}
               대시보드
             </Typography>
           </Box>
@@ -2397,7 +2404,7 @@ const Dashboard = () => {
         onClose={() => setLiquidateTarget(null)}
         onDone={() => fetchDashboardSnapshot()}
       />
-    </Container>
+    </PageFrame>
   );
 };
 

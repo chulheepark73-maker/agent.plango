@@ -50,6 +50,7 @@ app.use('/api/holdings', holdingsRoutes);
 app.use('/api/trading-v2', tradingV2Routes);
 app.use('/api/watchlist-v2', watchlistV2Routes);
 app.use('/api/logo', logoRoutes);
+app.use('/api/subscription', require('./routes/subscription'));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -124,12 +125,9 @@ attachWatchlistPriceWebSocket(server);
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`서버가 포트 ${PORT}에서 실행 중입니다. (0.0.0.0:${PORT})`);
 
-  ensureTradingV2Tables()
-    .then(() => require('./utils/brokerCredentialsStore').migrateAndDropUsersKiwoomColumns())
-    .then(() => require('./utils/userSettingsStore').migrateAndDropUsersWatchListColumns())
-    .catch((err) => {
-      console.error('[TradingV2/broker/settings] 기동 시 준비 실패:', err.message);
-    });
+  ensureTradingV2Tables().catch((err) => {
+    console.error('[TradingV2] 기동 시 준비 실패:', err.message);
+  });
   
   // 초기 거래시간 상태 체크
   updateTradingHoursCache();
@@ -143,10 +141,6 @@ server.listen(PORT, '0.0.0.0', () => {
 
   // 지표기반매매 익절·손절·트레일링 자동매도 (REST 폴백 등)
   startIndicatorSellMonitor();
-  
-  // 일일 거래대금 상위 종목 스케줄러 시작
-  //const { startScheduler } = require('./utils/dailyTradingStocksScheduler');
-  //startScheduler();
   
   // 토큰 자동 발급 스케줄러 시작 (매일 07:50 KST)
   const { startScheduler: startTokenScheduler } = require('./utils/tokenAutoRenewalScheduler');

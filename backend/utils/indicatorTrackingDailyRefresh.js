@@ -33,11 +33,12 @@ const kstDate = () => {
 
 /** 트래킹이 있는 모든 지표매매 사용자 */
 const listUsersWithTracking = async () => {
-  const pool = require('./db');
+  const pool = require('./tradingDb');
   const result = await pool.query(
     `SELECT user_id FROM indicator_trading
-     WHERE jsonb_typeof(tracking_stocks) = 'array'
-       AND jsonb_array_length(tracking_stocks) > 0`
+     WHERE json_valid(tracking_stocks)
+       AND json_type(tracking_stocks) = 'array'
+       AND json_array_length(tracking_stocks) > 0`
   );
   return result.rows.map((r) => String(r.user_id));
 };

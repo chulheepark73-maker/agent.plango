@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
-const pool = require('../utils/db');
+const pool = require('../utils/tradingDb');
 const { writeStockListNxtFile, isNXTStock } = require('../utils/stockListStore');
 
 function parseCsv(filePath) {
@@ -48,14 +48,10 @@ function parseCsv(filePath) {
   console.log('DL in nxt:', dl.rows);
   console.log('isNXTStock(375500):', await isNXTStock('375500'));
 
-  await pool.end();
+  pool.close();
   console.log('완료');
-})().catch(async (e) => {
+})().catch((e) => {
   console.error(e);
-  try {
-    await pool.end();
-  } catch (_) {
-    /* ignore */
-  }
+  pool.close();
   process.exit(1);
 });

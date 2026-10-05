@@ -4,13 +4,13 @@
  * - 마지막 구독 상태는 agent.json(lastSubscription)에 보관 → 재시작·중앙 장애 시에도 유지
  * - 중앙 연결 실패는 상태 변경으로 보지 않음
  */
-const { getOwnerUserId, loadAgentIdentity, saveAgentIdentity, isPaired } = require('./agentIdentity');
+const { getOwnerUserId, loadAgentIdentity, saveAgentIdentity, isRegistered } = require('./agentIdentity');
 const { normalizeSummary, disableTradingForUser } = require('./subscriptionStore');
 
 const SYNC_INTERVAL_MS = 10 * 60 * 1000;
 
 const runSubscriptionSync = async (label = '') => {
-  if (!isPaired()) return { skipped: 'not-paired' };
+  if (!isRegistered()) return { skipped: 'not-registered' };
   const tag = label ? ` (${label})` : '';
   const ownerId = getOwnerUserId();
   const { getOwnerStatus } = require('../services/centralClient');

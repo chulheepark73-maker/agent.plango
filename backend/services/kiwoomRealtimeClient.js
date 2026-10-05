@@ -4,9 +4,7 @@
  */
 
 const WebSocket = require('ws');
-
-const LIVE_WS_URL = 'wss://api.kiwoom.com:10000/api/dostk/websocket';
-const MOCK_WS_URL = 'wss://mockapi.kiwoom.com:10000/api/dostk/websocket';
+const { getKiwoomWsUrl } = require('../utils/kiwoomMode');
 
 /** LOGIN·REG 직후 CNSRREQ 전송 전 최소 대기 (ms) */
 const CNSRREQ_AFTER_LOGIN_MS = 1500;
@@ -25,11 +23,7 @@ function setsEqual(a, b) {
   return true;
 }
 
-function resolveKiwoomWsUrl() {
-  const base = process.env.KIWOOM_BASE_URL || process.env.KIWOOM_TOKEN_URL || '';
-  if (String(base).includes('mock')) return MOCK_WS_URL;
-  return process.env.KIWOOM_WS_URL || LIVE_WS_URL;
-}
+const resolveKiwoomWsUrl = getKiwoomWsUrl;
 
 function parseKiwoomNumber(raw) {
   if (raw == null || raw === '') return 0;

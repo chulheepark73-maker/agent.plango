@@ -2,8 +2,8 @@
  * 구독 상태 — 원본은 중앙 서버(GET /api/agent/owner 의 subscription).
  * 로컬은 한도 검사와 만료 시 자동매매 OFF 만 담당.
  */
-const pool = require('./db');
-const { isOwner, loadAgentIdentity } = require('./agentIdentity');
+const pool = require('./tradingDb');
+const { isOwner, isRegistered, loadAgentIdentity } = require('./agentIdentity');
 
 const FREE_SUMMARY = {
   subscription: 'N',
@@ -32,9 +32,10 @@ const normalizeSummary = (sub) => {
 
 /**
  * 중앙 조회 → 실패 시 마지막으로 저장된 구독(agent.json) → 그것도 없으면 무료
+ * 서버 등록 전에는 구독을 확인할 수 없으므로 무료
  */
 const getSubscriptionSummaryForUser = async (userId) => {
-  if (!isOwner(userId)) return { ...FREE_SUMMARY };
+  if (!isOwner(userId) || !isRegistered()) return { ...FREE_SUMMARY };
   try {
     const { getOwnerStatus } = require('../services/centralClient');
     const status = await getOwnerStatus();

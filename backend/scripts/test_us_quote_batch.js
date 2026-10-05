@@ -4,22 +4,17 @@
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
-const pool = require('../utils/db');
+const pool = require('../utils/tradingDb');
+const { getOwnerUserId } = require('../utils/agentIdentity');
 const { getKiwoomInfo } = require('../utils/kiwoomUtils');
 const kiwoomAPI = require('../services/kiwoomApi');
 
 async function resolveUserId(arg) {
   if (arg) return String(arg);
-  const r = await pool.query(`SELECT id FROM users ORDER BY id ASC LIMIT 20`);
-  for (const row of r.rows) {
-    try {
-      const info = await getKiwoomInfo(row.id);
-      if (info?.accessToken) return String(row.id);
-    } catch {
-      /* next */
-    }
-  }
-  return null;
+  const ownerId = getOwnerUserId();
+  if (!ownerId) return null;
+  const info = await getKiwoomInfo(ownerId).catch(() => null);
+  return info?.accessToken ? String(ownerId) : null;
 }
 
 async function main() {
@@ -55,15 +50,11 @@ async function main() {
     console.log(`  - ${q.stockCode} ${q.stockName} $${q.price} (${q.exchange})`);
   }
 
-  await pool.end();
+  pool.close();
 }
 
-main().catch(async (e) => {
+main().catch((e) => {
   console.error(e);
-  try {
-    await pool.end();
-  } catch {
-    /* ignore */
-  }
+  pool.close();
   process.exit(1);
 });

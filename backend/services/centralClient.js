@@ -3,10 +3,15 @@
  *
  * 공개
  *   GET    /api/agent/public-key            → { alg: 'RS256', publicKey }
+ *   GET    /api/auth/plans                  → { plans }
  * 사용자 토큰 (Authorization: Bearer)
  *   POST   /api/auth/login                  { email, password, client } → { token, user }
  *   POST   /api/auth/logout
  *   POST   /api/auth/verify-password        { password } → { verified }
+ *   PUT    /api/auth/profile                { username, phoneNumber } → { message, user }
+ *   PUT    /api/auth/change-password        { currentPassword, newPassword } → { message }
+ *   GET    /api/auth/me                     → { id, email, ..., subscription... }
+ *   POST   /api/auth/subscription           { planCode } → { message, subscription... }
  *   POST   /api/agent/register              { name, version } → { agentId, agentSecret }
  * 에이전트 자격 (X-Agent-Id / X-Agent-Secret)
  *   GET    /api/agent/owner                 → { user, subscription, telegram }
@@ -35,9 +40,12 @@ const bearer = (token) => ({ Authorization: `Bearer ${token}` });
 const agentHeaders = () => {
   const a = loadAgentIdentity();
   if (!a.agentId || !a.agentSecret) {
-    const e = new Error('에이전트가 중앙 서버에 페어링되지 않았습니다.');
-    e.status = 401;
-    e.code = 'AGENT_NOT_PAIRED';
+    const message = '이 서버가 PlanGo.Today 에 등록되지 않았습니다. 서버 등록 메뉴에서 등록하세요.';
+    const e = new Error(message);
+    // 401 은 프론트에서 로그아웃 처리되므로 사용하지 않는다
+    e.status = 409;
+    e.code = 'AGENT_NOT_REGISTERED';
+    e.data = { error: message, code: e.code };
     throw e;
   }
   return { 'X-Agent-Id': a.agentId, 'X-Agent-Secret': a.agentSecret };
@@ -86,6 +94,8 @@ const getPublicKey = async ({ force = false } = {}) => {
   return publicKeyCache;
 };
 
+const listPlans = () => wrap(() => http.get('/api/auth/plans'));
+
 /* ---------- 사용자 토큰 ---------- */
 
 const login = (body) => wrap(() => http.post('/api/auth/login', body));
@@ -98,6 +108,19 @@ const verifyPassword = async (token, password) => {
   );
   return !!data?.verified;
 };
+
+const updateProfile = (token, { username, phoneNumber }) =>
+  wrap(() => http.put('/api/auth/profile', { username, phoneNumber }, { headers: bearer(token) }));
+
+const changePassword = (token, { currentPassword, newPassword }) =>
+  wrap(() =>
+    http.put('/api/auth/change-password', { currentPassword, newPassword }, { headers: bearer(token) })
+  );
+
+const getMe = (token) => wrap(() => http.get('/api/auth/me', { headers: bearer(token) }));
+
+const changeSubscription = (token, planCode) =>
+  wrap(() => http.post('/api/auth/subscription', { planCode }, { headers: bearer(token) }));
 
 const registerAgent = (token) =>
   wrap(() =>
@@ -144,9 +167,14 @@ const unlinkTelegram = () =>
 module.exports = {
   getCentralApiUrl,
   getPublicKey,
+  listPlans,
   login,
   logout,
   verifyPassword,
+  updateProfile,
+  changePassword,
+  getMe,
+  changeSubscription,
   registerAgent,
   getOwnerStatus,
   getCachedOwnerStatus,

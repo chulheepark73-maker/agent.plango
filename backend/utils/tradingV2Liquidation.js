@@ -6,7 +6,7 @@
  * 체결 후 처리: tradingV2Fill.finalizeAfterComplete → 차수 재오픈/새 cycle 없이 플랜 completed
  */
 
-const pool = require('./db');
+const pool = require('./tradingDb');
 const { getKiwoomInfo, validateKiwoomInfo } = require('./kiwoomUtils');
 const { getTradingPlanById, createTradingOrder, ensureTradingV2Tables } = require('./tradingV2Store');
 const { avgCostFromPlanFills, netFilledQtyForSplitStage } = require('./infiniteTradeBands');

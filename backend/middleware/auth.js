@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { getPublicKey } = require('../services/centralClient');
-const { isPaired, isOwner } = require('../utils/agentIdentity');
+const { hasOwner, isOwner } = require('../utils/agentIdentity');
 
 const authError = (status, message, code) => {
   const e = new Error(message);
@@ -64,8 +64,8 @@ const verifyAgentToken = async (token) => {
     throw authError(401, '로그아웃된 토큰입니다. 다시 로그인해주세요.', 'SESSION_EXPIRED');
   }
   const user = await verifyCentralSignature(token);
-  if (!isPaired()) {
-    throw authError(401, '에이전트가 아직 페어링되지 않았습니다. 다시 로그인해주세요.', 'AGENT_NOT_PAIRED');
+  if (!hasOwner()) {
+    throw authError(401, '에이전트 주인이 정해지지 않았습니다. 다시 로그인해주세요.', 'AGENT_NO_OWNER');
   }
   if (!isOwner(user.userId)) {
     throw authError(403, '이 에이전트에 등록된 계정이 아닙니다.', 'AGENT_OWNER_MISMATCH');

@@ -24,8 +24,8 @@ npm run install-all
 ```
 
 2. 환경 변수 설정
-- `backend/.env` 파일 생성 및 키움증권 API 키 설정
-- `frontend/.env` 파일 생성 및 백엔드 API URL 설정
+- `backend/.env` 파일 생성 및 중앙 서버(CENTRAL_API_URL) 설정
+- `frontend/.env` 파일 생성 및 Auth 웹 URL 설정
 
 3. 개발 서버 실행
 ```bash
@@ -37,16 +37,16 @@ npm run dev
 ### backend/.env
 ```
 PORT=3001
-KIWOOM_API_KEY=your_api_key
-KIWOOM_API_SECRET=your_api_secret
-KIWOOM_BASE_URL=https://api.kiwoom.com
-JWT_SECRET=your_jwt_secret
-DATA_GO_KR_API_KEY=your_data_go_kr_api_key  # 공공데이터포털 특일정보 API 키 (선택사항)
+# 중앙 서버 (Auth Server). 로컬: http://localhost:3011
+CENTRAL_API_URL=https://plango.today
 ```
+
+키움 App Key/Secret 은 환경설정 화면에서 입력하며, 텔레그램 봇 설정은 Auth Server 에만 둡니다.
 
 ### frontend/.env
 ```
-REACT_APP_API_URL=http://localhost:3001
+# Auth 웹 (계정 만들기·비밀번호 찾기). 로컬: http://localhost:3010
+REACT_APP_AUTH_WEB_URL=https://auth.plango.today
 ```
 
 ## 프로젝트 구조
@@ -110,7 +110,7 @@ kiwoom-auto-trading/
 
 ## 향후 개선 사항
 
-- [ 0 ] 데이터베이스 연동 (PostgreSQL)
+- [ 0 ] 데이터베이스 연동 (SQLite, better-sqlite3)
 - [ ] 실시간 시세 웹소켓 연동
 - [ ] 자동매매 전략 실행 엔진 구현
 - [ ] 백테스팅 기능

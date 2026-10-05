@@ -1,6 +1,6 @@
 /**
  * 인증 — 중앙 서버(plango.today) 프록시
- * - 회원가입/이메일 인증/비밀번호 변경은 중앙 웹에서 처리
+ * - 회원가입/이메일 인증은 중앙 웹에서 처리, 개인정보·비밀번호 변경은 중앙 API 프록시
  * - 첫 로그인 시 이 에이전트를 해당 계정에 페어링
  */
 const express = require('express');
@@ -8,7 +8,13 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const central = require('../services/centralClient');
 const { authenticateToken, verifyCentralSignature, revokeToken } = require('../middleware/auth');
-const { loadAgentIdentity, saveAgentIdentity, isPaired, isOwner } = require('../utils/agentIdentity');
+const {
+  loadAgentIdentity,
+  saveAgentIdentity,
+  hasOwner,
+  isRegistered,
+  isOwner,
+} = require('../utils/agentIdentity');
 const { upsertOwnerUser, getUserById } = require('../utils/userStore');
 const { getSubscriptionSummaryForUser } = require('../utils/subscriptionStore');
 const { logLogin } = require('../utils/logger');
@@ -42,14 +48,69 @@ const maskEmail = (email) => {
   return `${id.slice(0, 2)}${'*'.repeat(Math.max(1, id.length - 2))}@${domain}`;
 };
 
-/** 로그인 화면용: 페어링 여부 (인증 불필요) */
+/** 로그인 화면용: 주인·서버 등록 여부 (인증 불필요) */
 router.get('/agent-status', (req, res) => {
   const a = loadAgentIdentity();
   res.json({
-    paired: isPaired(),
+    hasOwner: hasOwner(),
+    registered: isRegistered(),
     ownerEmail: maskEmail(a.ownerEmail),
-    pairedAt: a.pairedAt || null,
+    registeredAt: a.registeredAt || a.pairedAt || null,
   });
+});
+
+/** 서버 등록 상태 */
+router.get('/server-registration', authenticateToken, (req, res) => {
+  const a = loadAgentIdentity();
+  res.json({
+    registered: isRegistered(),
+    agentId: a.agentId || null,
+    registeredAt: a.registeredAt || a.pairedAt || null,
+    lastSyncedAt: a.lastSyncedAt || null,
+    centralUrl: central.getCentralApiUrl(),
+  });
+});
+
+/**
+ * 서버 등록 — 비밀번호 재확인 후 중앙에서 에이전트 키 발급
+ * 중앙 정책상 같은 계정의 기존 등록 서버는 폐기된다.
+ */
+router.post('/server-registration', authenticateToken, async (req, res) => {
+  const password = String(req.body?.password || '');
+  if (!password) return res.status(400).json({ error: '비밀번호를 입력해주세요.' });
+
+  try {
+    if (!(await central.verifyPassword(req.token, password))) {
+      return res.status(400).json({ error: '비밀번호가 일치하지 않습니다.', code: 'PASSWORD_MISMATCH' });
+    }
+    const reg = await central.registerAgent(req.token);
+    if (!reg?.agentId || !reg?.agentSecret) {
+      throw new Error('중앙 서버에서 에이전트 등록 정보를 받지 못했습니다.');
+    }
+    const registeredAt = new Date().toISOString();
+    saveAgentIdentity({ agentId: reg.agentId, agentSecret: reg.agentSecret, registeredAt });
+    central.invalidateOwnerStatus();
+    console.log(`[에이전트] 서버 등록 완료 owner=${req.user.userId} agentId=${reg.agentId}`);
+
+    let subscription = null;
+    try {
+      const { runSubscriptionSync } = require('../utils/subscriptionSyncScheduler');
+      subscription = (await runSubscriptionSync('server-registration'))?.subscription || null;
+    } catch (e) {
+      console.warn('[서버 등록] 구독 동기화 실패:', e.message);
+    }
+
+    res.json({ message: '서버 등록이 완료되었습니다.', registered: true, agentId: reg.agentId, registeredAt, subscription });
+  } catch (error) {
+    console.error('[서버 등록] 오류:', error.message);
+    if (error.network) {
+      return res.status(503).json({ error: '중앙 서버(plango.today)에 연결할 수 없습니다.', code: 'CENTRAL_UNAVAILABLE' });
+    }
+    res.status(error.status && error.status < 500 ? error.status : 502).json({
+      error: error.data?.error || error.message || '서버 등록 중 오류가 발생했습니다.',
+      code: error.data?.code || error.code,
+    });
+  }
 });
 
 router.post(
@@ -86,20 +147,15 @@ router.post(
       const userId = claims.userId;
       const profile = { ...(data.user || {}), id: userId };
 
-      if (!isPaired()) {
-        const reg = await central.registerAgent(data.token);
-        if (!reg?.agentId || !reg?.agentSecret) {
-          throw new Error('중앙 서버에서 에이전트 등록 정보를 받지 못했습니다.');
-        }
+      // 첫 로그인 계정을 주인으로만 정한다. 중앙 에이전트 키 발급은 '서버 등록' 메뉴에서.
+      if (!hasOwner()) {
         saveAgentIdentity({
           ownerUserId: userId,
           ownerUsername: profile.username || claims.username || null,
           ownerEmail: profile.email || email,
-          agentId: reg.agentId,
-          agentSecret: reg.agentSecret,
-          pairedAt: new Date().toISOString(),
+          ownerSince: new Date().toISOString(),
         });
-        console.log(`[에이전트] 페어링 완료 owner=${userId} agentId=${reg.agentId}`);
+        console.log(`[에이전트] 주인 지정 owner=${userId} (서버 등록 전)`);
       } else if (!isOwner(userId)) {
         central.logout(data.token).catch(() => {});
         logLogin('LOGIN', userId, email, clientIp, false, '에이전트 주인 아님', client);
@@ -171,6 +227,57 @@ router.get('/me', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('[me] 오류:', error);
     res.status(500).json({ error: '사용자 정보 조회 중 오류가 발생했습니다.' });
+  }
+});
+
+/** 중앙 오류를 그대로 전달 (중앙 401 은 프론트 로그아웃을 유발하므로 그대로 둔다) */
+const sendCentralError = (res, error, fallback) => {
+  if (error.network) {
+    return res.status(503).json({ error: '중앙 서버(plango.today)에 연결할 수 없습니다.', code: 'CENTRAL_UNAVAILABLE' });
+  }
+  res.status(error.status && error.status < 500 ? error.status : 502).json({
+    error: error.data?.error || error.data?.errors?.[0]?.msg || error.message || fallback,
+    code: error.data?.code,
+  });
+};
+
+/** 개인정보(사용자명·휴대폰) 수정 — 중앙에 반영 후 로컬 사본 갱신 */
+router.put('/profile', authenticateToken, async (req, res) => {
+  const username = String(req.body?.username || '').trim();
+  const phoneNumber = String(req.body?.phoneNumber || '').trim();
+  if (!username) return res.status(400).json({ error: '이름을 입력해주세요.' });
+  if (!phoneNumber) return res.status(400).json({ error: '휴대폰 번호를 입력해주세요.' });
+
+  try {
+    const data = await central.updateProfile(req.token, { username, phoneNumber });
+    const u = data?.user || {};
+    const current = await getUserById(req.user.userId);
+    await upsertOwnerUser({
+      id: req.user.userId,
+      email: u.email || current?.email,
+      username: u.username || username,
+      phoneNumber: u.phoneNumber || phoneNumber.replace(/[-\s]/g, ''),
+    });
+    central.invalidateOwnerStatus();
+    res.json({ message: data?.message || '개인정보가 수정되었습니다.', user: u });
+  } catch (error) {
+    console.error('[개인정보 수정] 오류:', error.message);
+    sendCentralError(res, error, '개인정보 수정 중 오류가 발생했습니다.');
+  }
+});
+
+router.put('/change-password', authenticateToken, async (req, res) => {
+  const currentPassword = String(req.body?.currentPassword || '');
+  const newPassword = String(req.body?.newPassword || '');
+  if (!currentPassword) return res.status(400).json({ error: '현재 비밀번호를 입력해주세요.' });
+  if (newPassword.length < 6) return res.status(400).json({ error: '새 비밀번호는 최소 6자 이상이어야 합니다.' });
+
+  try {
+    const data = await central.changePassword(req.token, { currentPassword, newPassword });
+    res.json({ message: data?.message || '비밀번호가 변경되었습니다.' });
+  } catch (error) {
+    console.error('[비밀번호 변경] 오류:', error.message);
+    sendCentralError(res, error, '비밀번호 변경 중 오류가 발생했습니다.');
   }
 });
 

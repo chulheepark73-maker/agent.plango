@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Container,
   Paper,
@@ -11,8 +11,7 @@ import {
   Link,
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
-import apiClient from '../utils/axios';
-import { centralUrl } from '../utils/central';
+import { authUrl } from '../utils/central';
 
 const linkSx = {
   color: 'text.primary',
@@ -22,21 +21,15 @@ const linkSx = {
 };
 
 const Login = () => {
-  const [email, setEmail] = useState('');
+  const [searchParams] = useSearchParams();
+  const justVerified = searchParams.get('verified') === '1';
+  const [email, setEmail] = useState(searchParams.get('email') || '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [emailError, setEmailError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [agentStatus, setAgentStatus] = useState(null);
   const { login } = useAuth();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    apiClient
-      .get('/auth/agent-status')
-      .then(({ data }) => setAgentStatus(data))
-      .catch(() => setAgentStatus(null));
-  }, []);
 
   const validateEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
@@ -115,16 +108,16 @@ const Login = () => {
           <Typography
             component="h1"
             variant="h4"
-            sx={{ fontWeight: 'bold', color: 'text.primary', marginBottom: 0.75 }}
+            sx={{ fontWeight: 'bold', color: 'text.primary', marginBottom: 2 }}
           >
-            로그인
+            PlanGo Agent 로그인
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            PlanGo.Today 계정으로 로그인합니다.
-            {agentStatus?.paired
-              ? ` 이 에이전트는 ${agentStatus.ownerEmail} 계정에 연결되어 있습니다.`
-              : ' 처음 로그인한 계정이 이 에이전트의 주인으로 등록됩니다.'}
-          </Typography>
+
+          {justVerified && !error && (
+            <Alert severity="success" sx={{ mb: 2 }}>
+              이메일 인증이 완료되었습니다. 다시 로그인하세요.
+            </Alert>
+          )}
 
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
@@ -175,10 +168,15 @@ const Login = () => {
             </Button>
 
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1.5 }}>
-              <Link href={centralUrl('/login')} target="_blank" rel="noopener noreferrer" sx={linkSx}>
-                계정 만들기 (PlanGo.Today)
+              <Link
+                href={authUrl(`/register?returnUrl=${encodeURIComponent(`${window.location.origin}/login`)}`)}
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={linkSx}
+              >
+                계정 만들기
               </Link>
-              <Link href={centralUrl('/login')} target="_blank" rel="noopener noreferrer" sx={linkSx}>
+              <Link href={authUrl('/login')} target="_blank" rel="noopener noreferrer" sx={linkSx}>
                 비밀번호를 잊어버리셨나요?
               </Link>
             </Box>

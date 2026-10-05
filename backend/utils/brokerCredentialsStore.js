@@ -1,18 +1,38 @@
 /**
  * 키움 계좌·자격증명: broker_accounts + broker_account_credentials
- * (users.kiwoom_* 컬럼은 마이그레이션 후 제거)
+ *
+ * 실전투자(live)와 모의투자(mock) 자격증명을 따로 저장하고,
+ * broker_accounts.trading_mode 로 선택된 쪽을 번들의 appKey/accessToken/accountNo 로 돌려준다.
  */
-const pool = require('./db');
+const pool = require('./tradingDb');
+const {
+  TRADING_MODES,
+  normalizeTradingMode,
+  getTradingMode,
+  setCachedTradingMode,
+} = require('./kiwoomMode');
 
-const KIWOOM_USER_COLUMNS = [
-  'kiwoom_app_key',
-  'kiwoom_app_secret',
-  'kiwoom_access_token',
-  'kiwoom_token_expires_at',
-  'kiwoom_account_no',
-];
+const MODE_COLUMNS = {
+  live: {
+    appKey: 'app_key_encrypted',
+    appSecret: 'app_secret_encrypted',
+    accessToken: 'access_token_encrypted',
+    expiresAt: 'access_token_expires_at',
+  },
+  mock: {
+    appKey: 'mock_app_key',
+    appSecret: 'mock_app_secret',
+    accessToken: 'mock_access_token',
+    expiresAt: 'mock_access_token_expires_at',
+  },
+};
 
-let migratePromise = null;
+const assertMode = (mode) => {
+  if (!TRADING_MODES.includes(mode)) {
+    throw Object.assign(new Error(`지원하지 않는 투자 모드: ${mode}`), { status: 400 });
+  }
+  return mode;
+};
 
 const ensureBrokerTables = async () => {
   const { ensureTradingV2Tables } = require('./tradingV2Store');
@@ -28,19 +48,30 @@ const DEFAULT_FEE_RATES = {
   usSellTaxRate: 0,
 };
 
+const mapModeCredentials = (row, mode) => {
+  const cols = MODE_COLUMNS[mode];
+  const expires = row[cols.expiresAt];
+  return {
+    appKey: row[cols.appKey] || null,
+    appSecret: row[cols.appSecret] || null,
+    accessToken: row[cols.accessToken] || null,
+    tokenExpiresAt: expires ? new Date(expires).toISOString() : null,
+  };
+};
+
 const mapBundle = (row) => {
   if (!row) return null;
+  const tradingMode = normalizeTradingMode(row.trading_mode);
+  const live = mapModeCredentials(row, 'live');
+  const mock = mapModeCredentials(row, 'mock');
+  const active = tradingMode === 'mock' ? mock : live;
   return {
     brokerAccountId: Number(row.broker_account_id || row.id),
-    accountNo: row.account_no || null,
     accountName: row.account_name || null,
-    appKey: row.app_key_encrypted || null,
-    appSecret: row.app_secret_encrypted || null,
-    accessToken: row.access_token_encrypted || null,
-    // TIMESTAMPTZ → 절대시각 ISO (Z)
-    tokenExpiresAt: row.access_token_expires_at
-      ? new Date(row.access_token_expires_at).toISOString()
-      : null,
+    tradingMode,
+    accountNo: row.account_no || null,
+    ...active,
+    credentials: { live, mock },
     buyFeeRate:
       row.buy_fee_rate != null ? Number(row.buy_fee_rate) : DEFAULT_FEE_RATES.buyFeeRate,
     sellFeeRate:
@@ -64,6 +95,7 @@ const getBrokerKiwoomBundle = async (userId) => {
     `SELECT
        ba.id AS broker_account_id,
        ba.account_no,
+       ba.trading_mode,
        ba.account_name,
        ba.buy_fee_rate,
        ba.sell_fee_rate,
@@ -74,7 +106,11 @@ const getBrokerKiwoomBundle = async (userId) => {
        c.app_key_encrypted,
        c.app_secret_encrypted,
        c.access_token_encrypted,
-       c.access_token_expires_at
+       c.access_token_expires_at,
+       c.mock_app_key,
+       c.mock_app_secret,
+       c.mock_access_token,
+       c.mock_access_token_expires_at
      FROM broker_accounts ba
      LEFT JOIN broker_account_credentials c ON c.broker_account_id = ba.id
      WHERE ba.user_id = $1 AND ba.broker = 'kiwoom'
@@ -173,45 +209,34 @@ const ensureAccountRow = async (userId, { accountNo, accountName } = {}) => {
   return ensureBrokerAccountForUser(userId, { accountNo, accountName });
 };
 
+/** 지정 모드의 자격증명 컬럼만 갱신한다 (undefined 인 값은 기존 값 유지) */
 const upsertCredentials = async (
   brokerAccountId,
-  { appKey, appSecret, accessToken, accessTokenExpiresAt, clearSecretIfNull = false }
+  mode,
+  { appKey, appSecret, accessToken, accessTokenExpiresAt }
 ) => {
+  const cols = MODE_COLUMNS[assertMode(mode)];
   const existing = await pool.query(
     `SELECT * FROM broker_account_credentials WHERE broker_account_id = $1`,
     [brokerAccountId]
   );
   const prev = existing.rows[0];
+  const pick = (value, col) => (value !== undefined ? value : prev?.[col] ?? null);
 
-  let nextSecret = appSecret;
-  if (nextSecret === undefined) {
-    nextSecret = prev?.app_secret_encrypted ?? null;
-  } else if (nextSecret == null && !clearSecretIfNull) {
-    nextSecret = prev?.app_secret_encrypted ?? null;
-  }
-
-  const nextKey = appKey !== undefined ? appKey : prev?.app_key_encrypted ?? null;
-  const nextToken =
-    accessToken !== undefined ? accessToken : prev?.access_token_encrypted ?? null;
-  const nextExpires =
-    accessTokenExpiresAt !== undefined
-      ? accessTokenExpiresAt
-      : prev?.access_token_expires_at ?? null;
+  const nextKey = pick(appKey, cols.appKey);
+  const nextSecret = appSecret == null ? prev?.[cols.appSecret] ?? null : appSecret;
+  const nextToken = pick(accessToken, cols.accessToken);
+  const nextExpires = pick(accessTokenExpiresAt, cols.expiresAt);
 
   await pool.query(
     `INSERT INTO broker_account_credentials (
-       broker_account_id,
-       app_key_encrypted,
-       app_secret_encrypted,
-       access_token_encrypted,
-       access_token_expires_at,
-       updated_at
+       broker_account_id, ${cols.appKey}, ${cols.appSecret}, ${cols.accessToken}, ${cols.expiresAt}, updated_at
      ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
      ON CONFLICT (broker_account_id) DO UPDATE SET
-       app_key_encrypted = EXCLUDED.app_key_encrypted,
-       app_secret_encrypted = EXCLUDED.app_secret_encrypted,
-       access_token_encrypted = EXCLUDED.access_token_encrypted,
-       access_token_expires_at = EXCLUDED.access_token_expires_at,
+       ${cols.appKey} = EXCLUDED.${cols.appKey},
+       ${cols.appSecret} = EXCLUDED.${cols.appSecret},
+       ${cols.accessToken} = EXCLUDED.${cols.accessToken},
+       ${cols.expiresAt} = EXCLUDED.${cols.expiresAt},
        updated_at = CURRENT_TIMESTAMP`,
     [brokerAccountId, nextKey, nextSecret, nextToken, nextExpires]
   );
@@ -220,104 +245,50 @@ const upsertCredentials = async (
 const saveAccountNo = async (userId, accountNo) => {
   const { getUserById } = require('./userStore');
   const user = await getUserById(userId);
-  const account = await ensureAccountRow(userId, {
-    accountNo,
-    accountName: user?.username || user?.email || null,
-  });
-  return account;
+  const accountName = user?.username || user?.email || null;
+  return ensureAccountRow(userId, { accountNo, accountName });
 };
 
-const saveAppCredentials = async (userId, { appKey, appSecret }) => {
+/** 키를 바꾸면 그 모드의 기존 토큰은 무효이므로 함께 지운다 */
+const saveAppCredentials = async (userId, { appKey, appSecret, mode = getTradingMode() }) => {
   const account = await ensureAccountRow(userId);
-  await upsertCredentials(account.id, {
+  await upsertCredentials(account.id, mode, {
     appKey,
-    appSecret: appSecret !== undefined ? appSecret : undefined,
+    appSecret,
     accessToken: null,
     accessTokenExpiresAt: null,
   });
   return getBrokerKiwoomBundle(userId);
 };
 
-const saveAccessToken = async (userId, { accessToken, expiresAt }) => {
+/** 토큰은 기본적으로 현재 선택된 모드에 저장 (발급도 현재 모드 서버에서 받는다) */
+const saveAccessToken = async (userId, { accessToken, expiresAt, mode = getTradingMode() }) => {
   const account = await ensureAccountRow(userId);
-  // Date로 넘겨 TIMESTAMPTZ에 절대시각으로 저장 (ISO Z 문자열의 tz 유실 방지)
   let expiresDate = null;
   if (expiresAt != null && expiresAt !== '') {
     expiresDate = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
     if (Number.isNaN(expiresDate.getTime())) expiresDate = null;
   }
-  await upsertCredentials(account.id, {
+  await upsertCredentials(account.id, mode, {
     accessToken: accessToken ?? null,
     accessTokenExpiresAt: expiresDate,
   });
   return getBrokerKiwoomBundle(userId);
 };
 
-const clearAccessToken = async (userId) => {
-  return saveAccessToken(userId, { accessToken: null, expiresAt: null });
+const clearAccessToken = async (userId, mode = getTradingMode()) => {
+  return saveAccessToken(userId, { accessToken: null, expiresAt: null, mode });
 };
 
-const usersHasKiwoomColumns = async () => {
-  const result = await pool.query(
-    `SELECT 1
-     FROM information_schema.columns
-     WHERE table_schema = 'public'
-       AND table_name = 'users'
-       AND column_name = 'kiwoom_app_key'
-     LIMIT 1`
+const setTradingMode = async (userId, mode) => {
+  assertMode(mode);
+  const account = await ensureAccountRow(userId);
+  await pool.query(
+    `UPDATE broker_accounts SET trading_mode = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+    [account.id, mode]
   );
-  return result.rows.length > 0;
-};
-
-/** users.kiwoom_* → broker_* 이관 후 users 컬럼 DROP */
-const migrateAndDropUsersKiwoomColumns = async () => {
-  if (migratePromise) return migratePromise;
-  migratePromise = (async () => {
-    await ensureBrokerTables();
-    if (!(await usersHasKiwoomColumns())) return { migrated: 0, dropped: false };
-
-    const users = await pool.query(
-      `SELECT id, username, email,
-              kiwoom_app_key, kiwoom_app_secret,
-              kiwoom_access_token, kiwoom_token_expires_at, kiwoom_account_no
-       FROM users`
-    );
-
-    let migrated = 0;
-    for (const u of users.rows) {
-      const uid = String(u.id);
-      const accountNo = u.kiwoom_account_no || null;
-      const accountName = u.username || u.email || null;
-      const account = await ensureAccountRow(uid, { accountNo, accountName });
-      if (
-        u.kiwoom_app_key ||
-        u.kiwoom_app_secret ||
-        u.kiwoom_access_token ||
-        u.kiwoom_token_expires_at
-      ) {
-        await upsertCredentials(account.id, {
-          appKey: u.kiwoom_app_key || null,
-          appSecret: u.kiwoom_app_secret || null,
-          accessToken: u.kiwoom_access_token || null,
-          accessTokenExpiresAt: u.kiwoom_token_expires_at || null,
-          clearSecretIfNull: true,
-        });
-      }
-      migrated += 1;
-    }
-
-    for (const col of KIWOOM_USER_COLUMNS) {
-      await pool.query(`ALTER TABLE users DROP COLUMN IF EXISTS ${col}`);
-    }
-    console.log(
-      `[brokerCredentials] users.kiwoom_* → broker_* 이관 ${migrated}명, users 컬럼 삭제 완료`
-    );
-    return { migrated, dropped: true };
-  })().catch((err) => {
-    migratePromise = null;
-    throw err;
-  });
-  return migratePromise;
+  setCachedTradingMode(mode);
+  return getBrokerKiwoomBundle(userId);
 };
 
 module.exports = {
@@ -329,6 +300,5 @@ module.exports = {
   saveAppCredentials,
   saveAccessToken,
   clearAccessToken,
-  migrateAndDropUsersKiwoomColumns,
-  usersHasKiwoomColumns,
+  setTradingMode,
 };

@@ -3,32 +3,12 @@
  * 국내 stock_list / stockListStore 와 동일 역할
  */
 
-const pool = require('./db');
-
-let tableReady = false;
+const pool = require('./tradingDb');
 
 const normalizeTicker = (raw) => String(raw || '').trim().toUpperCase();
 
-const ensureUsStockListTable = async () => {
-  if (tableReady) return;
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS us_stock_list (
-      ticker VARCHAR(20) PRIMARY KEY,
-      stock_name VARCHAR(200) NOT NULL DEFAULT '',
-      exchange VARCHAR(40),
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_us_stock_list_name
-    ON us_stock_list (stock_name)
-  `);
-  tableReady = true;
-};
-
-ensureUsStockListTable().catch((error) => {
-  console.error('[usStockListStore] ensureUsStockListTable 실패:', error.message);
-});
+/** 스키마는 db/trading_schema.sql 에서 생성된다 */
+const ensureUsStockListTable = async () => {};
 
 const rowToItem = (row) => ({
   ticker: row.ticker,

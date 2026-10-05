@@ -2,9 +2,7 @@
  * Trading V2 — ERD 기반 스토어
  * 기존 auto_tradings / us_auto_tradings 와 완전 분리
  */
-const fs = require('fs');
-const path = require('path');
-const pool = require('./db');
+const pool = require('./tradingDb');
 const { getUserById } = require('./userStore');
 const { looksLikeUsTicker } = require('./autoTradingMarket');
 const { assertCanActivateTradingV2 } = require('./subscriptionStore');
@@ -36,140 +34,8 @@ const stopPlanTrailingsOnSave = (planId, { silent = false, reason = '설정 변�
   }
 };
 
-let ensurePromise = null;
-
-/** TIMESTAMP without tz → TIMESTAMPTZ (기존 값은 UTC 벽시계로 저장됨) */
-const migrateCredentialsExpiresToTimestamptz = async () => {
-  const cols = ['access_token_expires_at', 'app_key_expires_at'];
-  for (const col of cols) {
-    const { rows } = await pool.query(
-      `SELECT data_type
-       FROM information_schema.columns
-       WHERE table_schema = 'public'
-         AND table_name = 'broker_account_credentials'
-         AND column_name = $1`,
-      [col]
-    );
-    if (!rows.length) continue;
-    if (rows[0].data_type !== 'timestamp without time zone') continue;
-    await pool.query(`
-      ALTER TABLE broker_account_credentials
-      ALTER COLUMN ${col} TYPE TIMESTAMPTZ
-      USING ${col} AT TIME ZONE 'UTC'
-    `);
-  }
-};
-
-const runSqlFile = async (relativePath) => {
-  const full = path.join(__dirname, '..', relativePath);
-  const sql = fs.readFileSync(full, 'utf8');
-  await pool.query(sql);
-
-  // 기존 DB 호환: account_name 추가, app_key/app_secret 제거 (키는 users 유지)
-  await pool.query(`
-    ALTER TABLE broker_accounts
-    ADD COLUMN IF NOT EXISTS account_name VARCHAR(100)
-  `);
-  await pool.query(`
-    ALTER TABLE broker_accounts
-    DROP COLUMN IF EXISTS app_key
-  `);
-  await pool.query(`
-    ALTER TABLE broker_accounts
-    DROP COLUMN IF EXISTS app_secret
-  `);
-
-  // 유저+브로커당 1계좌로 유니크 정리 (옛 uq_broker_accounts_user_broker_acct 제거)
-  await pool.query(`DROP INDEX IF EXISTS uq_broker_accounts_user_broker_acct`);
-  await pool.query(`
-    UPDATE trading_plans p
-    SET broker_account_id = keep.id
-    FROM broker_accounts dup
-    JOIN LATERAL (
-      SELECT id FROM broker_accounts b
-      WHERE b.user_id = dup.user_id AND b.broker = dup.broker
-      ORDER BY b.id ASC
-      LIMIT 1
-    ) keep ON true
-    WHERE p.broker_account_id = dup.id
-      AND dup.id <> keep.id
-  `);
-  await pool.query(`
-    DELETE FROM broker_accounts a
-    USING broker_accounts b
-    WHERE a.user_id = b.user_id
-      AND a.broker = b.broker
-      AND a.id > b.id
-  `);
-  await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_broker_accounts_user_broker
-    ON broker_accounts (user_id, broker)
-  `);
-
-  await pool.query(`
-    ALTER TABLE broker_accounts
-    ADD COLUMN IF NOT EXISTS buy_fee_rate NUMERIC(12, 8) NOT NULL DEFAULT 0.000125
-  `);
-  await pool.query(`
-    ALTER TABLE broker_accounts
-    ADD COLUMN IF NOT EXISTS sell_fee_rate NUMERIC(12, 8) NOT NULL DEFAULT 0.000125
-  `);
-  await pool.query(`
-    ALTER TABLE broker_accounts
-    ADD COLUMN IF NOT EXISTS sell_tax_rate NUMERIC(12, 8) NOT NULL DEFAULT 0.0018
-  `);
-  await pool.query(`
-    ALTER TABLE broker_accounts
-    ADD COLUMN IF NOT EXISTS us_buy_fee_rate NUMERIC(12, 8) NOT NULL DEFAULT 0
-  `);
-  await pool.query(`
-    ALTER TABLE broker_accounts
-    ADD COLUMN IF NOT EXISTS us_sell_fee_rate NUMERIC(12, 8) NOT NULL DEFAULT 0
-  `);
-  await pool.query(`
-    ALTER TABLE broker_accounts
-    ADD COLUMN IF NOT EXISTS us_sell_tax_rate NUMERIC(12, 8) NOT NULL DEFAULT 0
-  `);
-
-  await pool.query(`ALTER TABLE instruments ADD COLUMN IF NOT EXISTS mrkt_tp VARCHAR(10)`);
-
-  // 계좌별 API 자격증명 (users.kiwoom_* 미러 — 컬럼명 *_encrypted, 현재는 users 와 동일 저장)
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS broker_account_credentials (
-      id BIGSERIAL PRIMARY KEY,
-      broker_account_id BIGINT NOT NULL REFERENCES broker_accounts(id) ON DELETE CASCADE,
-      app_key_encrypted TEXT,
-      app_secret_encrypted TEXT,
-      app_key_expires_at TIMESTAMPTZ NULL,
-      access_token_encrypted TEXT,
-      access_token_expires_at TIMESTAMPTZ NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-  await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_broker_account_credentials_account
-    ON broker_account_credentials (broker_account_id)
-  `);
-
-  // TIMESTAMP(without tz) → TIMESTAMPTZ: 기존 값은 UTC 벽시계로 저장돼 있었음
-  await migrateCredentialsExpiresToTimestamptz();
-};
-
-const ensureTradingV2Tables = async () => {
-  if (!ensurePromise) {
-    ensurePromise = runSqlFile('scripts/create_trading_v2_tables.sql')
-      .then(() => {
-        console.log('[TradingV2] 테이블 준비 완료');
-      })
-      .catch((err) => {
-        ensurePromise = null;
-        console.error('[TradingV2] 테이블 준비 실패:', err.message);
-        throw err;
-      });
-  }
-  await ensurePromise;
-};
+/** 스키마는 db/trading_schema.sql 에서 생성된다 */
+const ensureTradingV2Tables = async () => {};
 
 const toNum = (v, fallback = null) => {
   if (v === null || v === undefined || v === '') return fallback;
@@ -1658,14 +1524,13 @@ const applyMrktTpFromStockList = async () => {
   await ensureTradingV2Tables();
   try {
     const result = await pool.query(`
-      UPDATE instruments i
+      UPDATE instruments AS i
       SET mrkt_tp = s.mrkt_tp, updated_at = CURRENT_TIMESTAMP
-      FROM stock_list s
+      FROM stock_list AS s
       WHERE UPPER(i.market) = 'KR'
         AND s.mrkt_tp IS NOT NULL
         AND s.mrkt_tp <> ''
-        AND UPPER(LEFT(regexp_replace(TRIM(i.symbol), '(_NX|_AL)$', '', 'i'), 6))
-          = UPPER(LEFT(regexp_replace(TRIM(s.stock_code), '(_NX|_AL)$', '', 'i'), 6))
+        AND UPPER(SUBSTR(TRIM(i.symbol), 1, 6)) = UPPER(SUBSTR(TRIM(s.stock_code), 1, 6))
         AND i.mrkt_tp IS DISTINCT FROM s.mrkt_tp
     `);
     return result.rowCount || 0;

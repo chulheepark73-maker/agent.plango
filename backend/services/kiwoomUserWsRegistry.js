@@ -219,6 +219,13 @@ function hasSubscriber(userId, key) {
   return !!entries.get(uidOf(userId))?.subscribers.has(key);
 }
 
+/** 투자 모드·토큰 변경 시: 소켓을 닫으면 재연결 때 새 주소·토큰으로 다시 LOGIN 한다 */
+function reconnectAll() {
+  for (const entry of entries.values()) {
+    entry.client.softDisconnect();
+  }
+}
+
 module.exports = {
   PRIORITY,
   MAX_REG_SYMBOLS,
@@ -229,4 +236,5 @@ module.exports = {
   getConnectedClient,
   hasSubscriber,
   syncOrderFillsEnabled,
+  reconnectAll,
 };

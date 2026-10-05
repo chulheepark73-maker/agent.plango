@@ -6,7 +6,8 @@ const { body, validationResult } = require('express-validator');
 const { getUserById } = require('../utils/userStore');
 const kiwoomAPI = require('../services/kiwoomApi');
 const central = require('../services/centralClient');
-const pool = require('../utils/db');
+const { isRegistered } = require('../utils/agentIdentity');
+const pool = require('../utils/tradingDb');
 const {
   getOrCreateUserSettings,
   updateUserSettings,
@@ -24,7 +25,10 @@ const {
   saveAppCredentials,
   saveAccessToken,
   clearAccessToken,
+  setTradingMode,
 } = require('../utils/brokerCredentialsStore');
+const { TRADING_MODES, normalizeTradingMode } = require('../utils/kiwoomMode');
+const { reconnectAll: reconnectKiwoomWs } = require('../services/kiwoomUserWsRegistry');
 
 let appVersion = '0.0.0';
 try {
@@ -101,26 +105,35 @@ router.get('/', authenticateToken, async (req, res) => {
     }
 
     let telegram = {};
-    try {
-      // 연결 대기 중에는 프론트가 2초 간격으로 조회 → 캐시 우회
-      const pending = !!central.getCachedOwnerStatus()?.telegram?.telegramLinkPending;
-      telegram = (await central.getOwnerStatus({ force: pending }))?.telegram || {};
-    } catch (e) {
-      console.warn('[환경설정 조회] 중앙 텔레그램 상태 조회 실패:', e.message);
+    const agentRegistered = isRegistered();
+    if (agentRegistered) {
+      try {
+        // 연결 대기 중에는 프론트가 2초 간격으로 조회 → 캐시 우회
+        const pending = !!central.getCachedOwnerStatus()?.telegram?.telegramLinkPending;
+        telegram = (await central.getOwnerStatus({ force: pending }))?.telegram || {};
+      } catch (e) {
+        console.warn('[환경설정 조회] 중앙 텔레그램 상태 조회 실패:', e.message);
+      }
     }
 
     // 민감한 정보는 제외하고 반환
     const feeRates = await getBrokerFeeRates(req.user.userId);
+    const live = kiwoom?.credentials?.live || {};
+    const mock = kiwoom?.credentials?.mock || {};
     res.json({
-      kiwoomAppKey: kiwoom?.appKey || '',
-      kiwoomAppSecret: kiwoom?.appSecret ? '***' : '',
-      hasAppSecret: !!kiwoom?.appSecret,
+      // 토큰 상태는 현재 선택된 모드 기준, 키는 실전/모의를 각각 내려준다
+      tradingMode: kiwoom?.tradingMode || 'live',
+      kiwoomAppKey: live.appKey || '',
+      kiwoomAppSecret: live.appSecret ? '***' : '',
+      hasAppSecret: !!live.appSecret,
+      kiwoomAccountNo: kiwoom?.accountNo || null,
+      mockAppKey: mock.appKey || '',
+      mockHasAppSecret: !!mock.appSecret,
       hasAccessToken: hasAccessToken,
       isTokenExpired: isTokenExpired,
       tokenStatus: tokenStatus,
       tokenExpiresAt: kiwoom?.tokenExpiresAt || null,
       tokenRemainingTime: tokenRemainingTime,
-      kiwoomAccountNo: kiwoom?.accountNo || null,
       buyFeeRate: feeRates.buyFeeRate,
       sellFeeRate: feeRates.sellFeeRate,
       sellTaxRate: feeRates.sellTaxRate,
@@ -130,6 +143,7 @@ router.get('/', authenticateToken, async (req, res) => {
       hasTelegramChatId: !!telegram.hasTelegramChatId,
       telegramDeepLinkReady: !!telegram.telegramDeepLinkReady,
       telegramLinkPending: !!telegram.telegramLinkPending,
+      agentRegistered,
       planWeek: Number(plan.krWeek || 0),
       planMonth: Number(plan.krMonth || 0),
       planYear: Number(plan.krYear || 0),
@@ -375,18 +389,41 @@ router.post('/app-credentials', authenticateToken, [
     }
 
     const { appKey, appSecret } = req.body;
+    const mode = normalizeTradingMode(req.body.mode);
 
     await saveAppCredentials(req.user.userId, {
       appKey,
       ...(appSecret ? { appSecret } : {}),
+      mode,
     });
 
     res.json({
-      message: 'App Key/Secret이 저장되었습니다.',
+      message: `${mode === 'mock' ? '모의투자' : '실전투자'} App Key/Secret이 저장되었습니다.`,
       hasAccessToken: false,
     });
   } catch (error) {
-    res.status(500).json({ error: 'App Key/Secret 저장 중 오류가 발생했습니다.' });
+    console.error('[App Key/Secret 저장] 에러:', error);
+    res.status(error.status || 500).json({ error: error.message || 'App Key/Secret 저장 중 오류가 발생했습니다.' });
+  }
+});
+
+// 실전투자 / 모의투자 선택
+router.put('/trading-mode', authenticateToken, async (req, res) => {
+  try {
+    const mode = req.body?.mode;
+    if (!TRADING_MODES.includes(mode)) {
+      return res.status(400).json({ error: "mode 는 'live' 또는 'mock' 이어야 합니다." });
+    }
+    const bundle = await setTradingMode(req.user.userId, mode);
+    reconnectKiwoomWs();
+    console.log(`[투자 모드] ${mode === 'mock' ? '모의투자' : '실전투자'}로 변경 (user=${req.user.userId})`);
+    res.json({
+      message: `${mode === 'mock' ? '모의투자' : '실전투자'}로 변경되었습니다.`,
+      tradingMode: bundle?.tradingMode || mode,
+    });
+  } catch (error) {
+    console.error('[투자 모드 변경] 에러:', error);
+    res.status(error.status || 500).json({ error: error.message || '투자 모드 변경 중 오류가 발생했습니다.' });
   }
 });
 

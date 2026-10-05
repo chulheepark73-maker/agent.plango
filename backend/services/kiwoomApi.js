@@ -1,6 +1,20 @@
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const { getKiwoomRestBase, getKiwoomTokenUrl } = require('../utils/kiwoomMode');
+
+/** 모의투자 서버는 초당 1건만 허용(1700) — 모의 서버로 가는 요청만 순서대로 간격을 둔다 */
+const MOCK_REST_HOST = 'mockapi.kiwoom.com';
+const MOCK_REQUEST_GAP_MS = 1100;
+let mockNextSlotAt = 0;
+axios.interceptors.request.use(async (config) => {
+  if (!String(config.url || '').includes(MOCK_REST_HOST)) return config;
+  const now = Date.now();
+  const wait = Math.max(0, mockNextSlotAt - now);
+  mockNextSlotAt = Math.max(now, mockNextSlotAt) + MOCK_REQUEST_GAP_MS;
+  if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+  return config;
+});
 
 /**
  * 키움 미국주식 주문/정정/STOP 단가 포맷
@@ -15,10 +29,9 @@ function formatUsOrderUnitPrice(price) {
 }
 
 class KiwoomAPI {
-  constructor() {
-    // Python 예제 기준: 실전투자는 https://api.kiwoom.com 사용
-    // 모의투자는 https://mockapi.kiwoom.com 사용
-    this.baseURL = process.env.KIWOOM_BASE_URL || 'https://api.kiwoom.com';
+  /** 실전 https://api.kiwoom.com / 모의 https://mockapi.kiwoom.com — 환경설정의 투자 모드를 따른다 */
+  get baseURL() {
+    return getKiwoomRestBase();
   }
 
   // 계좌 정보 조회 (계좌평가현황요청 - kt00004)
@@ -229,6 +242,21 @@ class KiwoomAPI {
       const marketTypes = KR_MRKT_TPS_TO_FETCH;
       
       const byCode = new Map();
+      const pageGapMs = 100;
+      const isRateLimited = (e) =>
+        e?.status === 429 ||
+        e?.data?.return_code === 5 ||
+        /허용된.*요청|1700/.test(String(e?.message || ''));
+      const fetchPage = async (mrktTp, contYn, nextKey) => {
+        for (let attempt = 1; ; attempt++) {
+          try {
+            return await this.getMarketStockList(accessToken, appKey, appSecret, mrktTp, contYn, nextKey);
+          } catch (e) {
+            if (!isRateLimited(e) || attempt >= 5) throw e;
+            await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+          }
+        }
+      };
       
       // 각 시장에 대해 종목 목록 조회
       for (const mrktTp of marketTypes) {
@@ -242,7 +270,7 @@ class KiwoomAPI {
         while (loopCount < maxLoops) {
           loopCount++;
           
-          const result = await this.getMarketStockList(accessToken, appKey, appSecret, mrktTp, contYn, nextKey);
+          const result = await fetchPage(mrktTp, contYn, nextKey);
           
           result.stocks.forEach((stock) => {
             const prev = byCode.get(stock.stockCode);
@@ -269,9 +297,9 @@ class KiwoomAPI {
             break;
           }
           
-          // API 호출 제한을 고려하여 약간의 지연
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, pageGapMs));
         }
+        await new Promise(resolve => setTimeout(resolve, pageGapMs));
       }
       
       const allStocks = Array.from(byCode.values());
@@ -951,10 +979,7 @@ class KiwoomAPI {
   // 액세스 토큰 발급 (OAuth2 Client Credentials)
   async generateAccessToken(appKey, appSecret) {
     try {
-      // 키움증권 OAuth2 토큰 발급 엔드포인트
-      // 실전 투자: https://api.kiwoom.com/oauth2/token
-      // 모의 투자: https://mockapi.kiwoom.com/oauth2/token
-      const tokenURL = process.env.KIWOOM_TOKEN_URL || 'https://api.kiwoom.com/oauth2/token';
+      const tokenURL = getKiwoomTokenUrl();
       
       // App Key와 App Secret 검증
       if (!appKey || !appSecret) {

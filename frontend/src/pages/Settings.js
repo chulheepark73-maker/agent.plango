@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Container,
   Typography,
   TextField,
   Button,
@@ -25,37 +24,126 @@ import {
   DialogContent,
   DialogActions,
   Chip,
-  FormControlLabel,
   Radio,
-  RadioGroup,
 } from '@mui/material';
+import PageFrame from '../components/PageFrame';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import AccountBoxIcon from '@mui/icons-material/AccountBox';
-import PrivacyTipIcon from '@mui/icons-material/PrivacyTip';
-import TelegramIcon from '@mui/icons-material/Telegram';
-import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
 import KeyIcon from '@mui/icons-material/Key';
 import StarIcon from '@mui/icons-material/Star';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import UpdateIcon from '@mui/icons-material/Update';
 import SavingsIcon from '@mui/icons-material/Savings';
-import DarkModeIcon from '@mui/icons-material/DarkMode';
 import apiClient from '../utils/axios';
-import { openCentral } from '../utils/central';
-import { useAuth } from '../contexts/AuthContext';
-import { useThemeMode } from '../contexts/ThemeModeContext';
+
+const TRADING_MODE_LABEL = { live: '실전투자', mock: '모의투자' };
+
+/** 키움 App Key/Secret 카드 (실전·모의 공용). 제목 옆 라디오로 사용할 쪽을 고른다 */
+const KiwoomCredentialsCard = ({
+  mode,
+  selected,
+  onSelect,
+  appKey,
+  appSecret,
+  hasAppSecret,
+  onAppKeyChange,
+  onAppSecretChange,
+  onSave,
+  loading,
+}) => {
+  const [showSecret, setShowSecret] = useState(false);
+  const label = TRADING_MODE_LABEL[mode];
+  return (
+    <Card
+      variant="outlined"
+      sx={{ mb: 3, borderColor: selected ? 'primary.main' : 'divider', borderWidth: selected ? 2 : 1 }}
+    >
+      <CardContent>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: -1 }}>
+          <Radio checked={selected} onChange={onSelect} disabled={loading} size="small" />
+          <Typography
+            variant="h6"
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, cursor: 'pointer' }}
+            onClick={selected || loading ? undefined : onSelect}
+          >
+            <KeyIcon sx={{ fontSize: '1.05rem' }} />
+            키움증권
+            <Box
+              component="span"
+              sx={{ color: '#FBC02D', fontWeight: 700 }}
+            >
+              {label}
+            </Box>
+            App Key/Secret 설정
+          </Typography>
+          {selected && <Chip label="사용 중" color="primary" size="small" sx={{ ml: 1 }} />}
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          {mode === 'mock'
+            ? '키움증권 개발자 포털에서 모의투자용으로 발급받은 App Key와 App Secret을 입력하세요.'
+            : '키움증권 개발자 포털에서 발급받은 App Key와 App Secret을 입력하세요.'}
+        </Typography>
+
+        <TextField
+          fullWidth
+          label="App Key"
+          margin="normal"
+          autoComplete="off"
+          value={appKey || ''}
+          onChange={onAppKeyChange}
+          placeholder={`키움증권에서 발급받은 ${label} App Key를 입력하세요`}
+        />
+
+        <TextField
+          fullWidth
+          label="App Secret"
+          margin="normal"
+          type={showSecret ? 'text' : 'password'}
+          autoComplete="new-password"
+          value={appSecret === '***' ? '' : appSecret || ''}
+          onChange={onAppSecretChange}
+          placeholder={
+            hasAppSecret
+              ? '새로운 App Secret을 입력하거나 비워두세요'
+              : `키움증권에서 발급받은 ${label} App Secret을 입력하세요`
+          }
+          helperText={
+            hasAppSecret && (!appSecret || appSecret === '***')
+              ? '기존 App Secret이 저장되어 있습니다. 변경하려면 새 값을 입력하세요.'
+              : ''
+          }
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton onClick={() => setShowSecret((v) => !v)} edge="end">
+                  {showSecret ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
+        />
+
+        <Button variant="contained" onClick={onSave} disabled={loading} sx={{ mt: 2 }}>
+          저장
+        </Button>
+      </CardContent>
+    </Card>
+  );
+};
 
 const Settings = () => {
-  const { user } = useAuth();
-  const { themeMode, setThemeMode } = useThemeMode();
   const [settings, setSettings] = useState({
+    tradingMode: 'live',
     kiwoomAppKey: '',
     kiwoomAppSecret: '',
     hasAppSecret: false,
+    mockAppKey: '',
+    mockAppSecret: '',
+    mockHasAppSecret: false,
     hasAccessToken: false,
     isTokenExpired: false,
     tokenStatus: 'none', // 'none', 'valid', 'expired'
@@ -67,9 +155,6 @@ const Settings = () => {
     usBuyFeeRate: 0,
     usSellFeeRate: 0,
     usSellTaxRate: 0,
-    hasTelegramChatId: false,
-    telegramDeepLinkReady: false,
-    telegramLinkPending: false,
     theme: 'dark',
     groupName1: '제목없음',
     groupName2: '제목없음',
@@ -87,8 +172,6 @@ const Settings = () => {
     planUsYear: 0,
     appVersion: '',
   });
-  const [showSecret, setShowSecret] = useState(false);
-  const [telegramWaitingForChat, setTelegramWaitingForChat] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [stockUpdateResultDialog, setStockUpdateResultDialog] = useState({
@@ -108,85 +191,11 @@ const Settings = () => {
   const [usHoldings, setUsHoldings] = useState([]);
   const [usAccountLoading, setUsAccountLoading] = useState(true);
   const [usDepositError, setUsDepositError] = useState(null);
-  const [usHoldingsError, setUsHoldingsError] = useState(null);
-
-  const formatDateKo = (value) => {
-    if (!value) return '-';
-    return new Date(value)
-      .toLocaleDateString('ko-KR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      })
-      .replace(/\./g, '-')
-      .replace(/\s/g, '')
-      .replace(/-$/, '');
-  };
-
-  /** 남은일수: KST 오늘 날짜 ~ 만료일(날짜만) 일수 차이 */
-  const getSubscriptionRemainingDays = (expiresAt) => {
-    if (!expiresAt) return null;
-    const toKstYmd = (value) => {
-      const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Seoul',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).formatToParts(new Date(value));
-      const y = Number(parts.find((p) => p.type === 'year')?.value);
-      const m = Number(parts.find((p) => p.type === 'month')?.value);
-      const d = Number(parts.find((p) => p.type === 'day')?.value);
-      return { y, m, d };
-    };
-    try {
-      const today = toKstYmd(new Date());
-      const end = toKstYmd(expiresAt);
-      if (![today.y, today.m, today.d, end.y, end.m, end.d].every(Number.isFinite)) {
-        return null;
-      }
-      const todayUtc = Date.UTC(today.y, today.m - 1, today.d);
-      const endUtc = Date.UTC(end.y, end.m - 1, end.d);
-      const days = Math.round((endUtc - todayUtc) / (1000 * 60 * 60 * 24));
-      return Number.isFinite(days) ? days : null;
-    } catch {
-      return null;
-    }
-  };
-
   useEffect(() => {
     fetchSettings();
     fetchAccountInfo();
     fetchUsAccountInfo();
   }, []);
-
-  useEffect(() => {
-    if (!telegramWaitingForChat) return undefined;
-
-    const interval = setInterval(async () => {
-      try {
-        const response = await apiClient.get('/settings');
-        setSettings(response.data);
-        if (response.data.hasTelegramChatId) {
-          setTelegramWaitingForChat(false);
-          setMessage({
-            type: 'success',
-            text: '텔레그램 알림이 연결되었습니다.',
-          });
-        }
-      } catch {
-        /* 무시 */
-      }
-    }, 2000);
-
-    const timeout = setTimeout(() => {
-      setTelegramWaitingForChat(false);
-    }, 120000);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
-  }, [telegramWaitingForChat]);
 
   const fetchSettings = async () => {
     try {
@@ -201,9 +210,6 @@ const Settings = () => {
         isTokenExpired: response.data.isTokenExpired,
         tokenStatus: response.data.tokenStatus,
         tokenExpiresAt: response.data.tokenExpiresAt,
-        hasTelegramChatId: response.data.hasTelegramChatId,
-        telegramDeepLinkReady: response.data.telegramDeepLinkReady,
-        telegramLinkPending: response.data.telegramLinkPending,
       });
       const userSettings = userSettingsRes?.data || {};
       const groupNames = {};
@@ -221,6 +227,7 @@ const Settings = () => {
       setSettings((prev) => ({
         ...prev,
         ...response.data,
+        mockAppSecret: '',
         ...groupNames,
         theme,
       }));
@@ -255,85 +262,74 @@ const Settings = () => {
     }
   };
 
-  const handleAppKeyChange = (e) => {
-    setSettings({ ...settings, kiwoomAppKey: e.target.value });
+  const setField = (key) => (e) => {
+    const { value } = e.target;
+    setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleAppSecretChange = (e) => {
-    setSettings({ ...settings, kiwoomAppSecret: e.target.value });
-  };
+  const handleSaveCredentials = async (mode) => {
+    const isMock = mode === 'mock';
+    const appKey = isMock ? settings.mockAppKey : settings.kiwoomAppKey;
+    const appSecret = isMock ? settings.mockAppSecret : settings.kiwoomAppSecret;
+    const hasAppSecret = isMock ? settings.mockHasAppSecret : settings.hasAppSecret;
 
-  const handleTelegramDeepLink = async () => {
+    if (!appKey) {
+      setMessage({ type: 'error', text: 'App Key를 입력해주세요.' });
+      return;
+    }
+    // App Secret 이 비어 있으면 기존 값 유지 (서버에서 처리)
+    if ((!appSecret || appSecret === '***') && !hasAppSecret) {
+      setMessage({ type: 'error', text: 'App Secret을 입력해주세요.' });
+      return;
+    }
+
     setLoading(true);
     setMessage({ type: '', text: '' });
 
     try {
-      const { data } = await apiClient.post('/settings/telegram-deep-link');
-      setSettings((prev) => ({
-        ...prev,
-        telegramLinkPending: true,
-      }));
-      setTelegramWaitingForChat(true);
-      window.open(data.botUrl, '_blank', 'noopener,noreferrer');
+      const payload = { mode, appKey };
+      if (appSecret && appSecret !== '***') payload.appSecret = appSecret;
+      const { data } = await apiClient.post('/settings/app-credentials', payload);
+
       setMessage({
         type: 'success',
-        text: '텔레그램이 열렸습니다. 봇 채팅에서「시작」을 눌러 연결을 완료하세요. (최대 약 2분간 연결 상태를 확인합니다)',
-      });
-    } catch (error) {
-      setMessage({
-        type: 'error',
         text:
-          error.response?.data?.error ||
-          '연결 링크를 만들 수 없습니다. 서버 텔레그램 설정을 확인하세요.',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSaveCredentials = async () => {
-    if (!settings.kiwoomAppKey) {
-      setMessage({
-        type: 'error',
-        text: 'App Key를 입력해주세요.',
-      });
-      return;
-    }
-    
-    // App Secret이 비어있고 기존에 저장된 것이 있다면 업데이트하지 않음
-    if (!settings.kiwoomAppSecret && !settings.hasAppSecret) {
-      setMessage({
-        type: 'error',
-        text: 'App Secret을 입력해주세요.',
-      });
-      return;
-    }
-
-    setLoading(true);
-    setMessage({ type: '', text: '' });
-
-    try {
-      // App Secret이 비어있으면 기존 값 유지 (서버에서 처리)
-      const payload = {
-        appKey: settings.kiwoomAppKey,
-      };
-      
-      // App Secret이 입력된 경우에만 포함
-      if (settings.kiwoomAppSecret && settings.kiwoomAppSecret !== '***') {
-        payload.appSecret = settings.kiwoomAppSecret;
-      }
-      
-      await apiClient.post('/settings/app-credentials', payload);
-
-      setMessage({
-        type: 'success',
-        text: 'App Key/Secret이 저장되었습니다. 이제 토큰을 발급받을 수 있습니다.',
+          settings.tradingMode === mode
+            ? `${data.message} 이제 토큰을 발급받을 수 있습니다.`
+            : `${data.message} 사용하려면 ${TRADING_MODE_LABEL[mode]}를 선택하세요.`,
       });
       await fetchSettings();
     } catch (error) {
       setMessage({
         type: 'error',
         text: error.response?.data?.error || '저장 중 오류가 발생했습니다.',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTradingModeChange = async (mode) => {
+    if (mode === settings.tradingMode) return;
+    const label = TRADING_MODE_LABEL[mode];
+    if (
+      !window.confirm(
+        `${label}로 변경하시겠습니까?\n자동매매·실시간 시세가 ${label} 서버로 다시 연결되며, ${label} 토큰이 필요합니다.`
+      )
+    ) {
+      return;
+    }
+    setLoading(true);
+    setMessage({ type: '', text: '' });
+    try {
+      const { data } = await apiClient.put('/settings/trading-mode', { mode });
+      setMessage({ type: 'success', text: data.message });
+      await fetchSettings();
+      fetchAccountInfo();
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.error || '투자 모드 변경 중 오류가 발생했습니다.',
       });
     } finally {
       setLoading(false);
@@ -439,30 +435,6 @@ const Settings = () => {
       setMessage({
         type: 'error',
         text: error.response?.data?.error || '관심종목 이름 저장 중 오류가 발생했습니다.',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleThemeModeChange = async (event) => {
-    const next = event.target.value === 'white' ? 'white' : 'dark';
-    setSettings((prev) => ({ ...prev, theme: next }));
-    setLoading(true);
-    setMessage({ type: '', text: '' });
-    try {
-      await setThemeMode(next);
-      setMessage({
-        type: 'success',
-        text:
-          next === 'white'
-            ? 'Light 모드로 저장되었습니다.'
-            : 'Dark 모드로 저장되었습니다.',
-      });
-    } catch (error) {
-      setMessage({
-        type: 'error',
-        text: error.response?.data?.error || '화면모드 저장 중 오류가 발생했습니다.',
       });
     } finally {
       setLoading(false);
@@ -651,7 +623,6 @@ const Settings = () => {
   const fetchUsAccountInfo = async () => {
     setUsAccountLoading(true);
     setUsDepositError(null);
-    setUsHoldingsError(null);
     try {
       const [depositRes, holdingsRes] = await Promise.allSettled([
         apiClient.get('/account/us/deposit'),
@@ -702,11 +673,7 @@ const Settings = () => {
           setUsDeposit((prev) => prev || raw);
         }
       } else {
-        const err = holdingsRes.reason;
         setUsHoldings([]);
-        setUsHoldingsError(
-          err?.response?.data?.error || '미국주식 원장잔고 조회에 실패했습니다.'
-        );
       }
     } catch (error) {
       setUsDeposit(null);
@@ -865,7 +832,7 @@ const Settings = () => {
   };
 
   return (
-    <Container maxWidth="xl">
+    <PageFrame>
       {message.text && (
         <Alert
           severity={message.type === 'error' ? 'error' : 'success'}
@@ -1239,12 +1206,6 @@ const Settings = () => {
                 US 계좌정보
               </Typography>
 
-              {usHoldingsError && (
-                <Alert severity="info" sx={{ mb: 2 }} onClose={() => setUsHoldingsError(null)}>
-                  미국 보유 종목 조회: {usHoldingsError}
-                </Alert>
-              )}
-
               {usAccountLoading ? (
                 <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
                   <CircularProgress />
@@ -1547,307 +1508,6 @@ const Settings = () => {
               </Button>
             </Paper>
 
-            {/* 개인정보 테이블 */}
-            <Paper sx={{ p: 3 }}>
-              <Typography
-                variant="h6"
-                sx={{ fontWeight: 'bold', mb: 2, display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
-              >
-                <PrivacyTipIcon sx={{ fontSize: '1.05rem' }} />
-                개인정보
-              </Typography>
-
-              {user ? (
-                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 3 }}>
-                  {/* 왼쪽: 회원 등급 배지 */}
-                  <Box
-                    sx={{
-                      width: 80,
-                      height: 80,
-                      borderRadius: '50%',
-                      backgroundColor: user?.subscription === 'Y' ? 'error.main' : 'primary.main',
-                      color: 'white',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      fontWeight: 'bold',
-                      fontSize: '1rem',
-                    }}
-                  >
-                    {user?.subscription === 'Y'
-                      ? (user?.subscriptionPlanName || '구독회원')
-                      : '일반회원'}
-                  </Box>
-
-                  {/* 오른쪽: 개인정보 목록 */}
-                  <Box sx={{ flex: 1 }}>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                        <Typography component="span" sx={{ fontSize: '0.875rem', color: 'text.primary' }}>•</Typography>
-                        <Typography sx={{ fontWeight: 'bold', minWidth: '90px', color: 'text.secondary', fontSize: '0.875rem' }}>
-                          이메일주소:
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                          <Typography sx={{ fontSize: '0.875rem' }}>
-                            {user.email || '-'}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>                            
-                          </Typography>
-                        </Box>
-                      </Box>
-                      
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                        <Typography component="span" sx={{ fontSize: '0.875rem', color: 'text.primary' }}>•</Typography>
-                        <Typography sx={{ fontWeight: 'bold', minWidth: '90px', color: 'text.secondary', fontSize: '0.875rem' }}>
-                          이름:
-                        </Typography>
-                        <Typography sx={{ fontSize: '0.875rem' }}>
-                          {user.username || user.id || '-'}
-                        </Typography>
-                      </Box>
-                      
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                        <Typography component="span" sx={{ fontSize: '0.875rem', color: 'text.primary' }}>•</Typography>
-                        <Typography sx={{ fontWeight: 'bold', minWidth: '90px', color: 'text.secondary', fontSize: '0.875rem' }}>
-                          회원가입일:
-                        </Typography>
-                        <Typography sx={{ fontSize: '0.875rem' }}>
-                          {user.createdAt 
-                            ? new Date(user.createdAt).toLocaleDateString('ko-KR', {
-                                year: 'numeric',
-                                month: '2-digit',
-                                day: '2-digit'
-                              }).replace(/\./g, '-').replace(/\s/g, '').replace(/-$/, '')
-                            : '-'}
-                        </Typography>
-                      </Box>
-                      
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
-                        <Typography component="span" sx={{ fontSize: '0.875rem', color: 'text.primary' }}>•</Typography>
-                        <Typography sx={{ fontWeight: 'bold', minWidth: '90px', color: 'text.secondary', fontSize: '0.875rem' }}>
-                          휴대폰번호:
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flex: 1 }}>
-                          <Typography sx={{ fontSize: '0.875rem' }}>
-                            {user.phoneNumber 
-                              ? (() => {
-                                  const phone = user.phoneNumber.replace(/[-\s]/g, '');
-                                  if (phone.length === 11) {
-                                    return `${phone.substring(0, 3)}-${phone.substring(3, 7).replace(/\d/g, '*')}-${phone.substring(7)}`;
-                                  }
-                                  return phone;
-                                })()
-                              : '-'}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
-                            (SMS수신)
-                          </Typography>
-                          <Box sx={{ display: 'flex', gap: 1, ml: 'auto' }}>
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              onClick={() => openCentral('/settings')}
-                              sx={{ fontSize: '0.75rem', py: 0.25, px: 1 }}
-                            >
-                              개인정보 변경
-                            </Button>
-                          </Box>
-                        </Box>
-                      </Box>
-                    </Box>
-                  </Box>
-                </Box>
-              ) : (
-                <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
-                  사용자 정보를 불러올 수 없습니다.
-                </Typography>
-              )}
-            </Paper>
-
-            {/* 구독관리 테이블 */}
-            <Paper sx={{ p: 3 }}>
-              <Typography
-                variant="h6"
-                sx={{ fontWeight: 'bold', mb: 2, display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
-              >
-                <WorkspacePremiumIcon sx={{ fontSize: '1.05rem' }} />
-                구독플랜
-              </Typography>
-
-              {user ? (
-                <>
-                  <TableContainer>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow sx={{ bgcolor: 'action.hover' }}>
-                          <TableCell align="center" sx={{ fontWeight: 'bold', fontSize: '0.875rem', borderRight: '1px solid', borderColor: 'divider' }}>
-                            현재 상태
-                          </TableCell>
-                          <TableCell align="center" sx={{ fontWeight: 'bold', fontSize: '0.875rem', borderRight: '1px solid', borderColor: 'divider' }}>
-                            플랜명
-                          </TableCell>
-                          <TableCell align="center" sx={{ fontWeight: 'bold', fontSize: '0.875rem', borderRight: '1px solid', borderColor: 'divider' }}>
-                            플랜시작일
-                          </TableCell>
-                          <TableCell align="center" sx={{ fontWeight: 'bold', fontSize: '0.875rem', borderRight: '1px solid', borderColor: 'divider' }}>
-                            플랜만료일
-                          </TableCell>
-                          <TableCell align="center" sx={{ fontWeight: 'bold', fontSize: '0.875rem' }}>
-                            남은일수
-                          </TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        <TableRow>
-                          <TableCell align="center" sx={{ borderRight: '1px solid', borderColor: 'divider' }}>
-                            <Typography
-                              sx={{
-                                fontSize: '0.875rem',
-                                color: user?.subscription === 'Y'
-                                  ? 'success.main'
-                                  : user?.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) < new Date()
-                                  ? 'error.main'
-                                  : 'text.secondary',
-                                fontWeight: 'bold'
-                              }}
-                            >
-                              {user?.subscription === 'Y'
-                                ? '구독중'
-                                : user?.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) < new Date()
-                                ? '만료됨'
-                                : '무료'}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center" sx={{ borderRight: '1px solid', borderColor: 'divider' }}>
-                            <Typography sx={{ fontSize: '0.875rem' }}>
-                              {user?.subscription === 'Y'
-                                ? `${user?.subscriptionPlanName || '프리미엄'}${user?.subscriptionCycle ? ` (${user.subscriptionCycle})` : ''}`
-                                : (user?.subscriptionPlanName || '무료')}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center" sx={{ borderRight: '1px solid', borderColor: 'divider' }}>
-                            <Typography sx={{ fontSize: '0.875rem' }}>
-                              {formatDateKo(user?.subscriptionStartedAt)}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center" sx={{ borderRight: '1px solid', borderColor: 'divider' }}>
-                            <Typography sx={{ fontSize: '0.875rem' }}>
-                              {formatDateKo(user?.subscriptionExpiresAt)}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            {(() => {
-                              const remainingDays =
-                                user?.subscription === 'Y'
-                                  ? getSubscriptionRemainingDays(user?.subscriptionExpiresAt)
-                                  : null;
-                              return (
-                                <Typography
-                                  sx={{
-                                    fontSize: '0.875rem',
-                                    fontWeight: remainingDays != null ? 'bold' : 'normal',
-                                    color:
-                                      remainingDays == null
-                                        ? 'text.secondary'
-                                        : remainingDays <= 3
-                                          ? 'error.main'
-                                          : remainingDays <= 7
-                                            ? 'warning.main'
-                                            : 'text.primary',
-                                  }}
-                                >
-                                  {remainingDays == null
-                                    ? '-'
-                                    : `${Math.max(0, remainingDays)}일`}
-                                </Typography>
-                              );
-                            })()}
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                  <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() => openCentral('/settings')}
-                      sx={{ fontSize: '0.75rem', py: 0.25, px: 1 }}
-                    >
-                      구독플랜 변경
-                    </Button>
-                  </Box>
-                </>
-              ) : (
-                <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
-                  사용자 정보를 불러올 수 없습니다.
-                </Typography>
-              )}
-            </Paper>
-
-            {/* 알림 기능 설정 (텔레그램) */}
-            <Paper sx={{ p: 3 }}>
-              <Box
-                display="flex"
-                alignItems="center"
-                flexWrap="wrap"
-                gap={1}
-                sx={{ mb: 2 }}
-              >
-                <Typography
-                  variant="h6"
-                  sx={{ fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
-                >
-                  <TelegramIcon sx={{ fontSize: '1.05rem' }} />
-                  텔레그램 알림 기능 설정
-                </Typography>
-                {settings.hasTelegramChatId && (
-                  <Chip label="텔레그램 알림 연결됨" color="success" size="small" />
-                )}
-              </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                <strong>연결 방법:</strong> 「텔레그램 봇으로 연결」을 누르면 텔레그램이 열리고, 봇 채팅에서 <strong>시작(/start)</strong>을 누르면 이 계정에 채팅 ID가
-                저장되어 알림을 받을 수 있습니다.               
-                <strong>알림 내용:</strong> Trailing 의 시작과 종료가 모두 텔레그램 알림으로 전달합니다. 최종 체결 여부는 카카오톡 메세지로 키움증권 제공입니디.
-              </Typography>
-              {!settings.telegramDeepLinkReady && (
-                <Alert severity="warning" sx={{ mb: 2 }}>
-                  서버에 <code>TELEGRAM_BOT_TOKEN</code>과 <code>TELEGRAM_BOT_USERNAME</code>이 설정되어 있어야 합니다.
-                  프로덕션에서는 웹훅(<code>/api/telegram/webhook</code>)으로, 로컬 개발 시에는{' '}
-                  <code>TELEGRAM_USE_POLLING=true</code>로 공용 봇 메시지를 받을 수 있습니다.
-                </Alert>
-              )}
-              {settings.telegramLinkPending && (
-                <Chip
-                  label="봇에서 /start 대기 중 (링크 유효 약 15분)"
-                  color="primary"
-                  size="small"
-                  sx={{ mb: 2 }}
-                />
-              )}
-              <Box sx={{ mb: 3 }}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={handleTelegramDeepLink}
-                  disabled={
-                    loading ||
-                    !settings.telegramDeepLinkReady ||
-                    settings.hasTelegramChatId
-                  }
-                  size="medium"
-                >
-                  텔레그램 봇으로 연결
-                </Button>
-                {telegramWaitingForChat && (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                    봇에서 시작을 누른 뒤 잠시만 기다려 주세요…
-                  </Typography>
-                )}
-              </Box>
-            </Paper>
-
             {/* 버전 정보 */}
             <Paper sx={{ p: 3 }}>
               <Typography
@@ -1874,36 +1534,145 @@ const Settings = () => {
         <Grid item xs={12} md={5}>
           <Paper sx={{ p: 2, height: '100%' }}>
             <Box sx={{ mt: 0 }}>
-        {/* 화면모드 설정 (user_settings.theme: dark | white) */}
-        <Card sx={{ mb: 3 }}>
+
+        {/* 키움증권 App Key/Secret — 실전투자 / 모의투자 중 하나 선택 */}
+        <KiwoomCredentialsCard
+          mode="live"
+          selected={settings.tradingMode !== 'mock'}
+          onSelect={() => handleTradingModeChange('live')}
+          appKey={settings.kiwoomAppKey}
+          appSecret={settings.kiwoomAppSecret}
+          hasAppSecret={settings.hasAppSecret}
+          onAppKeyChange={setField('kiwoomAppKey')}
+          onAppSecretChange={setField('kiwoomAppSecret')}
+          onSave={() => handleSaveCredentials('live')}
+          loading={loading}
+        />
+
+        <KiwoomCredentialsCard
+          mode="mock"
+          selected={settings.tradingMode === 'mock'}
+          onSelect={() => handleTradingModeChange('mock')}
+          appKey={settings.mockAppKey}
+          appSecret={settings.mockAppSecret}
+          hasAppSecret={settings.mockHasAppSecret}
+          onAppKeyChange={setField('mockAppKey')}
+          onAppSecretChange={setField('mockAppSecret')}
+          onSave={() => handleSaveCredentials('mock')}
+          loading={loading}
+        />
+
+        <Divider sx={{ my: 3 }} />
+
+        {/* 액세스 토큰 관리 */}
+        <Card>
           <CardContent>
-            <Typography
-              variant="h6"
-              gutterBottom
-              sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
-            >
-              <DarkModeIcon sx={{ fontSize: '1.05rem' }} />
-              화면모드 설정
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Light 모드는 밝은 화면, Dark 모드는 어두운 화면입니다.
-            </Typography>
-            <RadioGroup
-              row
-              value={settings.theme === 'white' || themeMode === 'white' ? 'white' : 'dark'}
-              onChange={handleThemeModeChange}
-            >
-              <FormControlLabel
-                value="white"
-                control={<Radio disabled={loading} />}
-                label="Light 모드"
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <Typography
+                variant="h6"
+                sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
+              >
+                <VpnKeyIcon sx={{ fontSize: '1.05rem' }} />
+                액세스 토큰 관리
+              </Typography>
+              <Chip
+                label={TRADING_MODE_LABEL[settings.tradingMode] || '실전투자'}
+                size="small"
+                variant="outlined"
+                sx={{ fontSize: '0.75rem', height: '24px', color: '#FBC02D', borderColor: '#FBC02D', fontWeight: 700 }}
               />
-              <FormControlLabel
-                value="dark"
-                control={<Radio disabled={loading} />}
-                label="Dark 모드"
+              <Chip 
+                label="매일 07:50 자동갱신" 
+                size="small" 
+                color="info" 
+                variant="outlined"
+                sx={{ fontSize: '0.75rem', height: '24px' }}
               />
-            </RadioGroup>
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              선택된 {TRADING_MODE_LABEL[settings.tradingMode] || '실전투자'} App Key/Secret으로 자동매매에 사용할 액세스 토큰을 발급받으세요.
+            </Typography>
+
+            {settings.hasAccessToken ? (
+              <Box>
+                {settings.isTokenExpired || settings.tokenStatus === 'expired' ? (
+                  <Alert severity="warning" sx={{ mb: 2 }}>
+                    액세스 토큰이 만료되었습니다. 토큰을 재발급받으세요.
+                    {settings.tokenExpiresAt && (
+                      <Typography variant="body2" sx={{ mt: 1 }}>
+                        만료일: {new Date(settings.tokenExpiresAt).toLocaleString('ko-KR')}
+                      </Typography>
+                    )}
+                  </Alert>
+                ) : (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                  액세스 토큰이 발급되어 있습니다.
+                  {settings.tokenExpiresAt && (
+                      <Box sx={{ mt: 1 }}>
+                        <Typography variant="body2">
+                      만료일: {new Date(settings.tokenExpiresAt).toLocaleString('ko-KR')}
+                    </Typography>
+                        {(() => {
+                          const remainingTime = getTokenRemainingTime();
+                          const expiresAt = new Date(settings.tokenExpiresAt);
+                          const now = new Date();
+                          const diffMs = expiresAt - now;
+                          const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                          const isExpiringSoon = diffHours < 1 && diffMs > 0;
+                          
+                          return remainingTime && (
+                            <Typography 
+                              variant="body2" 
+                              color={isExpiringSoon ? 'warning.main' : 'text.secondary'}
+                              sx={{ mt: 0.5 }}
+                            >
+                              남은 시간: {remainingTime}
+                            </Typography>
+                          );
+                        })()}
+                      </Box>
+                  )}
+                </Alert>
+                )}
+                <Box sx={{ display: 'flex', gap: 2 }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleGenerateToken}
+                    disabled={loading}
+                  >
+                    토큰 재발급
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    startIcon={<DeleteIcon />}
+                    onClick={handleDeleteToken}
+                    disabled={loading}
+                  >
+                    토큰 삭제
+                  </Button>
+                </Box>
+              </Box>
+            ) : (
+              <Box>
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  액세스 토큰이 발급되지 않았습니다. {TRADING_MODE_LABEL[settings.tradingMode] || '실전투자'} App Key/Secret을 저장한 후 토큰을 발급받으세요.
+                </Alert>
+                <Button
+                  variant="contained"
+                  onClick={handleGenerateToken}
+                  disabled={
+                    loading ||
+                    (settings.tradingMode === 'mock'
+                      ? !settings.mockAppKey || !settings.mockHasAppSecret
+                      : !settings.kiwoomAppKey || !settings.hasAppSecret)
+                  }
+                >
+                  토큰 발급
+                </Button>
+              </Box>
+            )}
           </CardContent>
         </Card>
 
@@ -2122,7 +1891,7 @@ const Settings = () => {
         <Divider sx={{ my: 3 }} />
 
         {/* KRX/US 관심종목 이름 설정 (user_settings.group_name1~8) */}
-        <Card sx={{ mb: 3 }}>
+        <Card>
           <CardContent>
             <Typography
               variant="h6"
@@ -2173,179 +1942,7 @@ const Settings = () => {
           </CardContent>
         </Card>
 
-        <Divider sx={{ my: 3 }} />
-
-        {/* App Key/Secret 설정 */}
-        <Card sx={{ mb: 3 }}>
-          <CardContent>
-            <Typography
-              variant="h6"
-              gutterBottom
-              sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
-            >
-              <KeyIcon sx={{ fontSize: '1.05rem' }} />
-              키움증권 App Key/Secret 설정
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              키움증권 개발자 포털에서 발급받은 App Key와 App Secret을 입력하세요.
-            </Typography>
-
-            <TextField
-              fullWidth
-              label="App Key"
-              margin="normal"
-              value={settings.kiwoomAppKey || ''}
-              onChange={handleAppKeyChange}
-              placeholder="키움증권에서 발급받은 App Key를 입력하세요"
-            />
-
-            <TextField
-              fullWidth
-              label="App Secret"
-              margin="normal"
-              type={showSecret ? 'text' : 'password'}
-              value={settings.kiwoomAppSecret === '***' ? '' : (settings.kiwoomAppSecret || '')}
-              onChange={handleAppSecretChange}
-              placeholder={
-                settings.hasAppSecret
-                  ? '새로운 App Secret을 입력하거나 비워두세요'
-                  : '키움증권에서 발급받은 App Secret을 입력하세요'
-              }
-              helperText={
-                settings.hasAppSecret && settings.kiwoomAppSecret === '***'
-                  ? '기존 App Secret이 저장되어 있습니다. 변경하려면 새 값을 입력하세요.'
-                  : ''
-              }
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={() => setShowSecret(!showSecret)}
-                      edge="end"
-                    >
-                      {showSecret ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-            />
-
-            <Button
-              variant="contained"
-              onClick={handleSaveCredentials}
-              disabled={loading}
-              sx={{ mt: 2 }}
-            >
-              저장
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Divider sx={{ my: 3 }} />
-
-        {/* 액세스 토큰 관리 */}
-        <Card>
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <Typography
-                variant="h6"
-                sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
-              >
-                <VpnKeyIcon sx={{ fontSize: '1.05rem' }} />
-                액세스 토큰 관리
-              </Typography>
-              <Chip 
-                label="매 06시 자동갱신" 
-                size="small" 
-                color="info" 
-                variant="outlined"
-                sx={{ fontSize: '0.75rem', height: '24px' }}
-              />
-            </Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              App Key/Secret을 저장한 후, 자동매매에 사용할 액세스 토큰을 발급받으세요.
-            </Typography>
-
-            {settings.hasAccessToken ? (
-              <Box>
-                {settings.isTokenExpired || settings.tokenStatus === 'expired' ? (
-                  <Alert severity="warning" sx={{ mb: 2 }}>
-                    액세스 토큰이 만료되었습니다. 토큰을 재발급받으세요.
-                    {settings.tokenExpiresAt && (
-                      <Typography variant="body2" sx={{ mt: 1 }}>
-                        만료일: {new Date(settings.tokenExpiresAt).toLocaleString('ko-KR')}
-                      </Typography>
-                    )}
-                  </Alert>
-                ) : (
-                <Alert severity="success" sx={{ mb: 2 }}>
-                  액세스 토큰이 발급되어 있습니다.
-                  {settings.tokenExpiresAt && (
-                      <Box sx={{ mt: 1 }}>
-                        <Typography variant="body2">
-                      만료일: {new Date(settings.tokenExpiresAt).toLocaleString('ko-KR')}
-                    </Typography>
-                        {(() => {
-                          const remainingTime = getTokenRemainingTime();
-                          const expiresAt = new Date(settings.tokenExpiresAt);
-                          const now = new Date();
-                          const diffMs = expiresAt - now;
-                          const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-                          const isExpiringSoon = diffHours < 1 && diffMs > 0;
-                          
-                          return remainingTime && (
-                            <Typography 
-                              variant="body2" 
-                              color={isExpiringSoon ? 'warning.main' : 'text.secondary'}
-                              sx={{ mt: 0.5 }}
-                            >
-                              남은 시간: {remainingTime}
-                            </Typography>
-                          );
-                        })()}
-                      </Box>
-                  )}
-                </Alert>
-                )}
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={handleGenerateToken}
-                    disabled={loading}
-                  >
-                    토큰 재발급
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    startIcon={<DeleteIcon />}
-                    onClick={handleDeleteToken}
-                    disabled={loading}
-                  >
-                    토큰 삭제
-                  </Button>
-                </Box>
-              </Box>
-            ) : (
-              <Box>
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  액세스 토큰이 발급되지 않았습니다. App Key/Secret을 저장한 후 토큰을 발급받으세요.
-                </Alert>
-                <Button
-                  variant="contained"
-                  onClick={handleGenerateToken}
-                  disabled={loading || !settings.kiwoomAppKey || !settings.hasAppSecret}
-                >
-                  토큰 발급
-                </Button>
-              </Box>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 관리자 전용: 종목명 업데이트 · 회원관리 — username === admin 만 표시 */}
-        {user?.username?.trim().toLowerCase() === 'admin' && (
+        {/* 종목명 업데이트 */}
           <>
             <Divider sx={{ my: 3 }} />
 
@@ -2445,7 +2042,6 @@ const Settings = () => {
             </Card>
 
           </>
-        )}
       </Box>
           </Paper>
         </Grid>
@@ -2479,7 +2075,7 @@ const Settings = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+    </PageFrame>
   );
 };
 

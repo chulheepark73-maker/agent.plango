@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  Container,
   Typography,
   TextField,
   Button,
@@ -42,6 +41,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import apiClient from '../utils/axios';
+import PageFrame from '../components/PageFrame';
 import { useAuth } from '../contexts/AuthContext';
 import { formatNumber, formatKstDateTime } from '../utils/formatUtils';
 
@@ -577,7 +577,7 @@ const IndicatorTrading = () => {
   };
 
   return (
-    <Container maxWidth="xl">
+    <PageFrame>
       {message.text && (
         <Alert severity={message.type || 'info'} sx={{ mb: 2 }} onClose={() => setMessage({ type: '', text: '' })}>
           {message.text}
@@ -1446,7 +1446,7 @@ const IndicatorTrading = () => {
           </Paper>
         </TabPanel>
       </Box>
-    </Container>
+    </PageFrame>
   );
 };
 

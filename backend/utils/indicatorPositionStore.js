@@ -3,103 +3,12 @@
  * tracking_stocks(JSON)는 조건식 감시 목록만 담당
  */
 
-const pool = require('./db');
-
-let tablesReady = false;
+const pool = require('./tradingDb');
 
 const ACTIVE_STATUSES = ['pending_buy', 'open', 'selling'];
 
-const ensurePositionTables = async () => {
-  if (tablesReady) return;
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS indicator_positions (
-      id                     BIGSERIAL PRIMARY KEY,
-      user_id                VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      stock_code             VARCHAR(20) NOT NULL,
-      stock_name             VARCHAR(100) NOT NULL DEFAULT '',
-      venue                  VARCHAR(8) NOT NULL DEFAULT 'KRX',
-      buy_condition_seq      VARCHAR(20) NOT NULL DEFAULT '',
-      status                 VARCHAR(20) NOT NULL DEFAULT 'pending_buy',
-      buy_order_no           VARCHAR(50),
-      buy_order_price        NUMERIC(14, 0),
-      buy_filled_price       NUMERIC(14, 0),
-      buy_qty                INTEGER NOT NULL DEFAULT 0,
-      buy_filled_qty         INTEGER NOT NULL DEFAULT 0,
-      buy_ordered_at         TIMESTAMPTZ,
-      buy_filled_at          TIMESTAMPTZ,
-      sell_order_no          VARCHAR(50),
-      sell_order_price       NUMERIC(14, 0),
-      sell_filled_price      NUMERIC(14, 0),
-      sell_qty               INTEGER NOT NULL DEFAULT 0,
-      sell_filled_qty        INTEGER NOT NULL DEFAULT 0,
-      sell_reason            VARCHAR(40),
-      sell_ordered_at        TIMESTAMPTZ,
-      sell_filled_at         TIMESTAMPTZ,
-      high_price_since_buy   NUMERIC(14, 0),
-      last_price             NUMERIC(14, 0),
-      last_profit_rate       NUMERIC(10, 4),
-      created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      closed_at              TIMESTAMPTZ
-    )
-  `);
-
-  await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_indicator_pos_open
-    ON indicator_positions (user_id, stock_code)
-    WHERE status IN ('pending_buy', 'open', 'selling')
-  `);
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_indicator_pos_user_status
-    ON indicator_positions (user_id, status)
-  `);
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_indicator_pos_open_monitor
-    ON indicator_positions (user_id)
-    WHERE status = 'open'
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS indicator_orders (
-      id              BIGSERIAL PRIMARY KEY,
-      user_id         VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      position_id     BIGINT REFERENCES indicator_positions(id) ON DELETE SET NULL,
-      stock_code      VARCHAR(20) NOT NULL,
-      side            VARCHAR(4) NOT NULL,
-      action          VARCHAR(20) NOT NULL,
-      venue           VARCHAR(8) NOT NULL DEFAULT 'KRX',
-      price_type      VARCHAR(10) NOT NULL DEFAULT 'limit',
-      order_price     NUMERIC(14, 0),
-      qty             INTEGER,
-      filled_price    NUMERIC(14, 0),
-      filled_qty      INTEGER,
-      order_no        VARCHAR(50),
-      parent_order_no VARCHAR(50),
-      reason          VARCHAR(40),
-      raw_message     TEXT,
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_indicator_orders_user_time
-    ON indicator_orders (user_id, created_at DESC)
-  `);
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_indicator_orders_position
-    ON indicator_orders (position_id)
-  `);
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_indicator_orders_ord_no
-    ON indicator_orders (user_id, order_no)
-  `);
-
-  await pool.query(
-    `ALTER TABLE indicator_positions ADD COLUMN IF NOT EXISTS entry_source VARCHAR(20)`
-  );
-
-  tablesReady = true;
-};
+/** 스키마는 db/trading_schema.sql 에서 생성된다 */
+const ensurePositionTables = async () => {};
 
 const mapPosition = (row) => {
   if (!row) return null;
@@ -265,7 +174,7 @@ const hasProfitableCloseToday = async (userId, stockCode) => {
        AND status = 'closed'
        AND COALESCE(buy_filled_price, buy_order_price) > 0
        AND COALESCE(sell_filled_price, sell_order_price) > COALESCE(buy_filled_price, buy_order_price)
-       AND (${soldAtExpr} AT TIME ZONE 'Asia/Seoul')::date = (NOW() AT TIME ZONE 'Asia/Seoul')::date
+       AND date(${soldAtExpr}, '+9 hours') = date('now', '+9 hours')
      LIMIT 1`,
     [String(userId), code6]
   );
@@ -988,23 +897,27 @@ const stripOrderFieldsFromTracking = (row) => {
 const getUnfilledSellPlacesFromOrders = async (userId) => {
   await ensurePositionTables();
   const result = await pool.query(
-    `SELECT DISTINCT ON (o.order_no)
-       o.stock_code, o.order_no, o.order_price, o.qty, o.venue, o.position_id, o.created_at
-     FROM indicator_orders o
-     WHERE o.user_id = $1
-       AND o.side = 'sell'
-       AND o.action = 'place'
-       AND o.created_at > NOW() - INTERVAL '1 day'
-       AND o.order_no IS NOT NULL
-       AND TRIM(o.order_no) <> ''
-       AND NOT EXISTS (
-         SELECT 1 FROM indicator_orders f
-         WHERE f.user_id = o.user_id
-           AND f.order_no = o.order_no
-           AND f.side = 'sell'
-           AND f.action IN ('fill', 'reject')
-       )
-     ORDER BY o.order_no, o.created_at DESC`,
+    `SELECT stock_code, order_no, order_price, qty, venue, position_id, created_at
+     FROM (
+       SELECT o.stock_code, o.order_no, o.order_price, o.qty, o.venue, o.position_id, o.created_at,
+              ROW_NUMBER() OVER (PARTITION BY o.order_no ORDER BY o.created_at DESC) AS rn
+       FROM indicator_orders o
+       WHERE o.user_id = $1
+         AND o.side = 'sell'
+         AND o.action = 'place'
+         AND o.created_at > NOW() - INTERVAL '1 day'
+         AND o.order_no IS NOT NULL
+         AND TRIM(o.order_no) <> ''
+         AND NOT EXISTS (
+           SELECT 1 FROM indicator_orders f
+           WHERE f.user_id = o.user_id
+             AND f.order_no = o.order_no
+             AND f.side = 'sell'
+             AND f.action IN ('fill', 'reject')
+         )
+     )
+     WHERE rn = 1
+     ORDER BY order_no`,
     [String(userId)]
   );
   return result.rows.map((r) => ({
@@ -1423,31 +1336,22 @@ const getClosedTradeHistory = async (userId, { startDate, endDate } = {}) => {
 
   await repairIncompleteClosedPositions(userId);
 
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_indicator_pos_closed_sell
-    ON indicator_positions (user_id, sell_filled_at DESC)
-    WHERE status = 'closed'
-  `);
-
-  const result = await pool.query(
-    `SELECT p.*,
-            sf.filled_price AS order_fill_price,
-            sf.filled_qty AS order_fill_qty
-     FROM indicator_positions p
-     LEFT JOIN LATERAL (
-       SELECT filled_price, filled_qty
-       FROM indicator_orders
-       WHERE position_id = p.id
-         AND side = 'sell'
-         AND action = 'fill'
+  const lastSellFill = (col) => `(
+       SELECT ${col} FROM indicator_orders
+       WHERE position_id = p.id AND side = 'sell' AND action = 'fill'
        ORDER BY created_at DESC
        LIMIT 1
-     ) sf ON TRUE
+     )`;
+  const result = await pool.query(
+    `SELECT p.*,
+            ${lastSellFill('filled_price')} AS order_fill_price,
+            ${lastSellFill('filled_qty')} AS order_fill_qty
+     FROM indicator_positions p
      WHERE p.user_id = $1
        AND p.status = 'closed'
-       AND COALESCE(p.sell_filled_price, p.sell_order_price, sf.filled_price) IS NOT NULL
-       AND (${tradeSoldAtExpr} AT TIME ZONE 'Asia/Seoul')::date >= $2::date
-       AND (${tradeSoldAtExpr} AT TIME ZONE 'Asia/Seoul')::date <= $3::date
+       AND COALESCE(p.sell_filled_price, p.sell_order_price, ${lastSellFill('filled_price')}) IS NOT NULL
+       AND date(${tradeSoldAtExpr}, '+9 hours') >= date($2)
+       AND date(${tradeSoldAtExpr}, '+9 hours') <= date($3)
      ORDER BY ${tradeSoldAtExpr} DESC, p.id DESC`,
     [String(userId), start, end]
   );
