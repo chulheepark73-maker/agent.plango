@@ -173,6 +173,8 @@ const Settings = () => {
     appVersion: '',
   });
   const [loading, setLoading] = useState(false);
+  // 입력 중인 값이 아니라 서버에 저장된 계좌번호 기준으로 경고
+  const [savedAccountNo, setSavedAccountNo] = useState(null);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [stockUpdateResultDialog, setStockUpdateResultDialog] = useState({
     open: false,
@@ -224,6 +226,7 @@ const Settings = () => {
         userSettings.theme === 'white' || userSettings.theme === 'light'
           ? 'white'
           : 'dark';
+      setSavedAccountNo(String(response.data.kiwoomAccountNo || '').trim());
       setSettings((prev) => ({
         ...prev,
         ...response.data,
@@ -1520,7 +1523,7 @@ const Settings = () => {
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
                 <Typography component="span" sx={{ fontSize: '0.875rem', color: 'text.primary' }}>•</Typography>
                 <Typography sx={{ fontWeight: 'bold', minWidth: '90px', color: 'text.secondary', fontSize: '0.875rem' }}>
-                  웹 버전:
+                  에이전트 버전:
                 </Typography>
                 <Typography sx={{ fontSize: '0.875rem' }}>
                   {settings.appVersion ? `v${settings.appVersion}` : '-'}
@@ -1692,6 +1695,12 @@ const Settings = () => {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
               자동매매에 사용할 키움증권 계좌번호를 입력하세요.
             </Typography>
+
+            {settings.hasAccessToken && savedAccountNo === '' && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                계좌번호를 입력해야 자동매매가 동작합니다. 계좌번호를 입력한 뒤 아래 저장 버튼을 눌러 주세요.
+              </Alert>
+            )}
 
             <TextField
               fullWidth

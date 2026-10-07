@@ -249,6 +249,9 @@ function parseOrderFillEvent(row, values) {
         0
     )
   );
+  // 911 은 주문 누적 체결량, 915 는 이번 체결분 — 부분체결 이벤트가 여러 번 오면 둘이 다르다
+  const cumExecQty = v['911'] != null ? Math.abs(parseKiwoomNumber(v['911'])) : null;
+  const unitExecQty = v['915'] != null ? Math.abs(parseKiwoomNumber(v['915'])) : null;
   const orderQty = Math.abs(
     parseKiwoomNumber(v['900'] ?? v.ord_qty ?? v.order_qty ?? v['주문수량'] ?? 0)
   );
@@ -274,6 +277,8 @@ function parseOrderFillEvent(row, values) {
     orderNo,
     orderNoNorm: normalizeOrderNo(orderNo),
     execQty,
+    cumExecQty: Number.isFinite(cumExecQty) && cumExecQty > 0 ? cumExecQty : null,
+    unitExecQty: Number.isFinite(unitExecQty) && unitExecQty > 0 ? unitExecQty : null,
     orderQty,
     unexecQty: Number.isFinite(unexecQty) ? unexecQty : null,
     execPrice,

@@ -153,7 +153,10 @@ const liquidatePlan = async (userId, planId, kiwoomInfo, { limitPrice = null } =
     rawLimit >= 1 ? Math.round(rawLimit * 100) / 100 : Math.round(rawLimit * 10000) / 10000;
   if (isUs) {
     if (!isUsTradingHours()) {
-      return { planId: id, ok: false, error: '미국 주문 가능 시간(ET 04:00~20:00)이 아닙니다.' };
+      const hours = require('./kiwoomMode').isMockMode()
+        ? '모의투자 ET 09:30~16:00 정규장'
+        : 'ET 04:00~20:00';
+      return { planId: id, ok: false, error: `미국 주문 가능 시간(${hours})이 아닙니다.` };
     }
     if (!(usLimit > 0)) {
       return { planId: id, ok: false, error: '표시된 시세가 없어 지정가를 정할 수 없습니다.' };

@@ -12,6 +12,32 @@ const inflightV2Orders = new Set();
 const v2OrderLockKey = (side, planId, stageId, cycleId, stageNo) =>
   `${String(side).toUpperCase()}:${planId}:${stageId || 0}:${cycleId || 0}:${stageNo || 0}`;
 
+/**
+ * 키움이 주문을 거부하면(잔고·수량 부족 등) 같은 플랜·방향 재주문을 잠시 막는다.
+ * 막지 않으면 trailing 이 매 틱 다시 arm → 즉시 재주문을 반복한다.
+ */
+const REJECT_COOLDOWN_MS = 3 * 60 * 1000;
+/** @type {Map<string, number>} key → 재시도 허용 시각 */
+const rejectCooldowns = new Map();
+const cooldownKey = (side, planId) => `${String(side).toUpperCase()}:${planId}`;
+
+const markOrderRejected = (side, planId, code, reason) => {
+  if (!planId) return;
+  rejectCooldowns.set(cooldownKey(side, planId), Date.now() + REJECT_COOLDOWN_MS);
+  console.warn(
+    `[TradingV2] ${side} 주문 거부 — plan=${planId} ${code} ${REJECT_COOLDOWN_MS / 60000}분간 재주문 중지: ${reason}`
+  );
+};
+
+const isV2OrderOnCooldown = (side, planId) => {
+  const key = cooldownKey(side, planId);
+  const until = rejectCooldowns.get(key);
+  if (!until) return false;
+  if (Date.now() < until) return true;
+  rejectCooldowns.delete(key);
+  return false;
+};
+
 const canPlaceKrV2Order = (stockMarket) => isSessionOpenForMarket(stockMarket);
 
 const assertV2StageStillOpen = async ({ userId, planId, side, stageId, cycleId }) => {
@@ -165,6 +191,7 @@ const executeTradingV2BuyOrder = async ({
     if (result.return_code !== undefined && result.return_code !== 0) {
       const errorMsg = result.return_msg || '주문 실패';
       console.error(`[TradingV2매수] 실패: ${code}`, errorMsg);
+      markOrderRejected('BUY', planId, code, errorMsg);
       return { success: false, stockCode: code, buyStage, error: errorMsg, message: errorMsg };
     }
 
@@ -206,6 +233,7 @@ const executeTradingV2BuyOrder = async ({
     return { success: true, stockCode: code, buyStage, orderNo, message: '주문이 접수되었습니다.' };
   } catch (error) {
     console.error(`[TradingV2매수] 오류: ${stockCode}`, error.message);
+    markOrderRejected('BUY', planId, stockCode, error.message);
     return { success: false, stockCode, buyStage, error: error.message, message: '주문 접수에 실패했습니다.' };
   } finally {
     inflightV2Orders.delete(lockKey);
@@ -275,6 +303,7 @@ const executeTradingV2SellOrder = async ({
     if (result.return_code !== undefined && result.return_code !== 0) {
       const errorMsg = result.return_msg || '주문 실패';
       console.error(`[TradingV2매도] 실패: ${code}`, errorMsg);
+      markOrderRejected('SELL', planId, code, errorMsg);
       return { success: false, stockCode: code, sellStage, error: errorMsg, message: errorMsg };
     }
 
@@ -316,6 +345,7 @@ const executeTradingV2SellOrder = async ({
     return { success: true, stockCode: code, sellStage, orderNo, message: '주문이 접수되었습니다.' };
   } catch (error) {
     console.error(`[TradingV2매도] 오류: ${stockCode}`, error.message);
+    markOrderRejected('SELL', planId, stockCode, error.message);
     return { success: false, stockCode, sellStage, error: error.message, message: '주문 접수에 실패했습니다.' };
   } finally {
     inflightV2Orders.delete(lockKey);
@@ -351,5 +381,6 @@ module.exports = {
   executeTradingV2BuyOrder,
   executeTradingV2SellOrder,
   hasOpenOrderForStage,
+  isV2OrderOnCooldown,
   OPEN_ORDER_STATUSES,
 };

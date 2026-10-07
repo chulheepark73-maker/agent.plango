@@ -273,7 +273,19 @@ const saveAccessToken = async (userId, { accessToken, expiresAt, mode = getTradi
     accessToken: accessToken ?? null,
     accessTokenExpiresAt: expiresDate,
   });
+  if (accessToken) wakeMonitorsAfterTokenIssue();
   return getBrokerKiwoomBundle(userId);
+};
+
+/** 토큰이 없어 감시 대상에서 빠졌던 사용자를 다음 주기까지 기다리지 않고 바로 다시 잡는다 */
+const wakeMonitorsAfterTokenIssue = () => {
+  for (const mod of ['../services/autoTradingWsMonitor_v2', '../services/indicatorWsMonitor']) {
+    try {
+      require(mod).requestSubscribeRefreshSoon();
+    } catch {
+      /* 모니터 미기동 */
+    }
+  }
 };
 
 const clearAccessToken = async (userId, mode = getTradingMode()) => {

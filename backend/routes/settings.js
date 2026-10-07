@@ -1,5 +1,4 @@
 const express = require('express');
-const path = require('path');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
@@ -30,17 +29,7 @@ const {
 const { TRADING_MODES, normalizeTradingMode } = require('../utils/kiwoomMode');
 const { reconnectAll: reconnectKiwoomWs } = require('../services/kiwoomUserWsRegistry');
 
-let appVersion = '0.0.0';
-try {
-  // 루트 package.json (backend/routes → ../../package.json)
-  appVersion = require(path.join(__dirname, '../../package.json')).version || appVersion;
-} catch {
-  try {
-    appVersion = require(path.join(__dirname, '../package.json')).version || appVersion;
-  } catch {
-    /* ignore */
-  }
-}
+const { appVersion } = require('../utils/appVersion');
 const DEFAULT_WATCH_LIST_NAME = '제목없음';
 const normalizeWatchListTitle = (value) => {
   const v = String(value ?? '').trim();

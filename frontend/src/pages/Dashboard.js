@@ -20,7 +20,9 @@ import {
   IconButton,
   Chip,
   Fade,
+  Tooltip,
 } from '@mui/material';
+import NoteAltOutlinedIcon from '@mui/icons-material/NoteAltOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
 import CandlestickChartIcon from '@mui/icons-material/CandlestickChart';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
@@ -221,7 +223,7 @@ const HOLDINGS_ROTATE_MS = 10000;
 const dashInnerCardBg = (theme) =>
   theme.palette.mode === 'dark' ? '#122239' : theme.palette.action.hover;
 
-const DashStatusCard = ({ icon: Icon, iconColor, title, subtitle, children }) => (
+const DashStatusCard = ({ icon: Icon, iconColor, title, subtitle, action, children }) => (
   <Box
     sx={(theme) => ({
       height: '100%',
@@ -258,6 +260,7 @@ const DashStatusCard = ({ icon: Icon, iconColor, title, subtitle, children }) =>
           </Typography>
         )}
       </Box>
+      {action && <Box sx={{ ml: 'auto', flexShrink: 0 }}>{action}</Box>}
     </Box>
     {children}
   </Box>
@@ -335,8 +338,9 @@ const renderPlanProgressRows = (planProgress, loading) => {
       label: '현금비중',
       Icon: AccountBalanceWalletIcon,
       percent: Number(planProgress.investable?.percent || 0),
+      pending: planProgress.investable == null,
     },
-  ].map(({ key, label, Icon, percent }) => {
+  ].map(({ key, label, Icon, percent, pending }) => {
     const barPercent = Math.min(100, Math.max(0, percent));
     const barColor = key === 'investable' ? '#d29922' : '#3fb950';
     const labelColor = HOLDINGS_DASH.muted;
@@ -377,7 +381,7 @@ const renderPlanProgressRows = (planProgress, loading) => {
             />
           </Box>
           <Typography variant="caption" sx={{ color: HOLDINGS_DASH.muted, minWidth: 44, textAlign: 'right' }}>
-            {percent.toFixed(2)}%
+            {pending ? '조회중' : `${percent.toFixed(2)}%`}
           </Typography>
         </Box>
       </Box>
@@ -857,6 +861,8 @@ const Dashboard = () => {
   const [holdingsLoading, setHoldingsLoading] = useState(true);
   const [holdingsPriceLoading, setHoldingsPriceLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [trailingLogNotice, setTrailingLogNotice] = useState(null);
+  const [trailingLogExporting, setTrailingLogExporting] = useState(null);
   // 매도완료 내역 관련 상태
   const [tradeHistory, setTradeHistory] = useState([]);
   const [tradeHistoryLoading, setTradeHistoryLoading] = useState(false);
@@ -1301,25 +1307,86 @@ const Dashboard = () => {
     try {
       setPlanProgressLoading(true);
       const response = await apiClient.get('/holdings/plan-progress');
-      const fallback = {
-        goals: response.data?.goals || EMPTY_PLAN_PROGRESS.goals,
-        profits: response.data?.profits || EMPTY_PLAN_PROGRESS.profits,
-        progress: response.data?.progress || EMPTY_PLAN_PROGRESS.progress,
-        investable: response.data?.investable || EMPTY_PLAN_PROGRESS.investable,
-      };
-      setKrPlanProgress(response.data?.kr || fallback);
-      setUsPlanProgress(response.data?.us || EMPTY_PLAN_PROGRESS);
+      // investable 이 null 이면(서버 캐시 없음) 직전 값 유지, 아래 plan-investable 로 채움
+      const keepInvestable = (next) => (prev) => ({
+        ...EMPTY_PLAN_PROGRESS,
+        ...next,
+        investable: next?.investable ?? (prev.investable === EMPTY_PLAN_PROGRESS.investable ? null : prev.investable),
+      });
+      setKrPlanProgress(keepInvestable(response.data?.kr));
+      setUsPlanProgress(keepInvestable(response.data?.us));
       if (response.data?.date) {
         setPlanProgressDate(response.data.date);
       }
+      if (response.data?.kr?.investable && response.data?.us?.investable) return;
     } catch (error) {
       console.error('[대시보드] Plan 진행사항 조회 실패:', error);
       setKrPlanProgress(EMPTY_PLAN_PROGRESS);
       setUsPlanProgress(EMPTY_PLAN_PROGRESS);
+      return;
     } finally {
       setPlanProgressLoading(false);
     }
+
+    try {
+      const { data } = await apiClient.get('/holdings/plan-investable');
+      setKrPlanProgress((prev) => ({ ...prev, investable: data?.kr || EMPTY_PLAN_PROGRESS.investable }));
+      setUsPlanProgress((prev) => ({ ...prev, investable: data?.us || EMPTY_PLAN_PROGRESS.investable }));
+    } catch (error) {
+      console.error('[대시보드] 투자가능금액 조회 실패:', error);
+      setKrPlanProgress((prev) => ({ ...prev, investable: prev.investable || EMPTY_PLAN_PROGRESS.investable }));
+      setUsPlanProgress((prev) => ({ ...prev, investable: prev.investable || EMPTY_PLAN_PROGRESS.investable }));
+    }
   }, []);
+
+  const exportTrailingLog = useCallback(async (side) => {
+    setTrailingLogExporting(side);
+    try {
+      const { data } = await apiClient.post('/holdings/trailing-log-export', { side });
+      if (typeof data.content === 'string') {
+        // Windows 메모장 한글 깨짐 방지용 BOM
+        const blob = new Blob(['\uFEFF', data.content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = data.fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+      setTrailingLogNotice({
+        type: 'success',
+        text: `${data.fileName} 저장·다운로드 완료 (${data.count}건) — 서버 backend/data 에도 저장됨`,
+      });
+    } catch (error) {
+      setTrailingLogNotice({
+        type: 'error',
+        text: error.response?.data?.error || '로그 추출에 실패했습니다.',
+      });
+    } finally {
+      setTrailingLogExporting(null);
+    }
+  }, []);
+
+  const renderTrailingLogAction = (side, label) => (
+    <Tooltip title={`오늘 ${label} 로그 저장·다운로드`}>
+      <span>
+        <IconButton
+          size="small"
+          onClick={() => exportTrailingLog(side)}
+          disabled={trailingLogExporting !== null}
+          sx={{ color: HOLDINGS_DASH.muted }}
+        >
+          {trailingLogExporting === side ? (
+            <CircularProgress size={18} sx={{ color: HOLDINGS_DASH.muted }} />
+          ) : (
+            <NoteAltOutlinedIcon fontSize="small" />
+          )}
+        </IconButton>
+      </span>
+    </Tooltip>
+  );
 
   const fetchTrailingStatus = useCallback(async (showLoading = true) => {
     // REST는 장외 동기화·스냅샷용 폴백. 장중은 WebSocket dashboard_status 사용.
@@ -1721,9 +1788,23 @@ const Dashboard = () => {
 
       {/* Trailing Buy / Sell / 주문번호 — 보유종목처럼 한 Paper 안 섹션 */}
       <Box sx={{ mt: 2 }}>
+        {trailingLogNotice && (
+          <Alert
+            severity={trailingLogNotice.type}
+            sx={{ mb: 1.5 }}
+            onClose={() => setTrailingLogNotice(null)}
+          >
+            {trailingLogNotice.text}
+          </Alert>
+        )}
         <Grid container rowSpacing={2} columnSpacing={1.5} alignItems="stretch">
           <Grid item xs={12} md={4}>
-            <DashStatusCard icon={TrendingUpIcon} iconColor="#2e9e6b" title="Trailing Buy Status">
+            <DashStatusCard
+              icon={TrendingUpIcon}
+              iconColor="#2e9e6b"
+              title="Trailing Buy Status"
+              action={renderTrailingLogAction('buy', 'Trailing Buy')}
+            >
               {trailingStatusLoading ? (
                 <Typography variant="body2" sx={{ color: HOLDINGS_DASH.muted, pl: 6 }}>
                   trailingstop 진행중 상태를 불러오는 중...
@@ -1739,7 +1820,12 @@ const Dashboard = () => {
           </Grid>
 
           <Grid item xs={12} md={4}>
-            <DashStatusCard icon={ShieldIcon} iconColor="#1f6feb" title="Trailing Sell Status">
+            <DashStatusCard
+              icon={ShieldIcon}
+              iconColor="#1f6feb"
+              title="Trailing Sell Status"
+              action={renderTrailingLogAction('sell', 'Trailing Sell')}
+            >
               {trailingStatusLoading ? (
                 <Typography variant="body2" sx={{ color: HOLDINGS_DASH.muted, pl: 6 }}>
                   trailingstop 진행중 상태를 불러오는 중...
@@ -1769,19 +1855,18 @@ const Dashboard = () => {
                   </Typography>
                 </Box>
               ) : holdingOrderNumbers.length === 0 ? (
-                <Box
-                  display="flex"
-                  justifyContent="center"
-                  alignItems="center"
-                  minHeight="44px"
-                  sx={{ bgcolor: 'action.hover', borderRadius: 1.5 }}
-                >
-                  <Typography variant="body2" sx={{ color: HOLDINGS_DASH.muted }}>
-                    표시할 주문번호가 없습니다.
-                  </Typography>
-                </Box>
+                <Typography variant="body2" sx={{ color: HOLDINGS_DASH.muted, pl: 6 }}>
+                  표시할 주문번호가 없습니다.
+                </Typography>
               ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, alignItems: 'stretch' }}>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+                    columnGap: 2,
+                    rowGap: 1.5,
+                  }}
+                >
                   {holdingOrderNumbers.map((item) => {
                     const isUs = isUsHoldingCode(item.stockCode, item.stockMarket);
                     const orderPriceStr = formatNumber(item.orderPrice);
@@ -1792,6 +1877,7 @@ const Dashboard = () => {
                       stockNameMap,
                       item.stockName
                     );
+                    const statusColor = item.status === '체결완료' ? '#3fb950' : '#d29922';
                     return (
                       <Box
                         key={`${item.source || 'v1'}_${item.planId || 0}_${item.stockCode}_${item.stage}_${item.orderNo}`}
@@ -1803,18 +1889,22 @@ const Dashboard = () => {
                         >
                           {displayName} ({item.stockCode}) ({item.stage}차)
                         </Typography>
-                        <Typography variant="body1" sx={{ fontWeight: 700, color: HOLDINGS_DASH.text }}>
-                          {item.orderNo}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, flexWrap: 'wrap' }}>
+                          <Typography variant="body1" sx={{ fontWeight: 700, color: HOLDINGS_DASH.text }}>
+                            {item.orderNo}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            sx={{ fontWeight: 700, color: statusColor, whiteSpace: 'nowrap' }}
+                          >
+                            {item.status || '주문접수'}
+                          </Typography>
+                        </Box>
                         <Typography
                           variant="body2"
-                          sx={{
-                            fontWeight: 700,
-                            color: item.status === '체결완료' ? '#3fb950' : '#d29922',
-                            wordBreak: 'break-word',
-                          }}
+                          sx={{ fontWeight: 700, color: statusColor, wordBreak: 'break-word' }}
                         >
-                          {item.status || '주문접수'} / 주문가격 : {orderPriceDisplay}
+                          주문가격 : {orderPriceDisplay}
                         </Typography>
                       </Box>
                     );

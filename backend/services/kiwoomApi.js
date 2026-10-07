@@ -825,25 +825,28 @@ class KiwoomAPI {
   }
 
   // 주문번호로 체결 여부 확인
-  async checkOrderExecution(accessToken, appKey, appSecret, accountNo, orderNo, dmstStexTp = 'KRX') {
+  async checkOrderExecution(accessToken, appKey, appSecret, accountNo, orderNo, dmstStexTp = 'KRX', ordDt = null) {
     try {
+      // 모의투자는 ord_dt 를 비우면 "조회내역이 없습니다" — 당일(KST) 지정
+      const todayKst = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, '');
       const executions = await this.getOrderHistory(
         accessToken,
         appKey,
         appSecret,
         accountNo,
-        null, // startDate
+        ordDt || todayKst, // startDate
         null, // endDate
         'N', // contYn
         '', // nextKey
         dmstStexTp
       );
-      
+
       // 주문번호로 필터링
+      const wantOrderNo = String(orderNo || '').trim().replace(/^0+/, '');
       if (executions && executions.acnt_ord_cntr_prst_array) {
         const matchedExecutions = executions.acnt_ord_cntr_prst_array.filter(exec => {
           const execOrderNo = exec.ord_no || exec.ord_no_remn || exec.order_no || '';
-          return String(execOrderNo) === String(orderNo);
+          return String(execOrderNo).trim().replace(/^0+/, '') === wantOrderNo;
         });
         
         return {

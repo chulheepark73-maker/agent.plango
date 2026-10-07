@@ -21,7 +21,6 @@ const REGISTRY_KEY = 'indicator';
 const SUBSCRIBE_REFRESH_MS = 30000;
 const OFF_MARKET_CHECK_MS = 60000;
 const WARMUP_REFRESH_MS = 5000;
-const CLOSED_DAY_CHECK_MS = 60 * 60 * 1000;
 const TICK_DEBOUNCE_MS = 800;
 const SUBSCRIBE_SOON_MS = 2000;
 
@@ -385,8 +384,9 @@ async function refreshSubscriptions(opts = {}) {
     const users = await getValidUsers();
     const indicatorAutoSet = new Set(await listAutoTradingUserIds());
     if (users.length === 0 && indicatorAutoSet.size === 0) {
+      // 장중인데 대상이 없으면 토큰 만료·계좌번호 누락 등 곧 풀릴 수 있는 상황
       destroyAllMonitors();
-      scheduleRefresh(CLOSED_DAY_CHECK_MS);
+      scheduleRefresh(OFF_MARKET_CHECK_MS);
       return;
     }
 

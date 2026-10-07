@@ -27,9 +27,7 @@ import CandlestickChartIcon from '@mui/icons-material/CandlestickChart';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import DnsIcon from '@mui/icons-material/Dns';
-import StorageIcon from '@mui/icons-material/Storage';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
-import CardMembershipIcon from '@mui/icons-material/CardMembership';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
 import LockResetIcon from '@mui/icons-material/LockReset';
 import TelegramIcon from '@mui/icons-material/Telegram';
@@ -76,14 +74,12 @@ const sideMenuGroups = [
     title: '서버',
     items: [
       { Icon: DnsIcon, path: '/server-registration', label: '서버등록' },
-      { Icon: StorageIcon, path: '/server-management', label: '서버관리' },
     ],
   },
   {
     title: '구독서비스',
     items: [
       { Icon: LocalOfferIcon, path: '/subscription-plans', label: '구독플랜' },
-      { Icon: CardMembershipIcon, path: '/subscription-apply', label: '구독신청' },
     ],
   },
   {

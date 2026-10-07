@@ -402,7 +402,7 @@ const IndicatorTrading = () => {
         });
         setTrackingStocks(Array.isArray(data.stocks) ? data.stocks : []);
         setMessage({
-          type: data.keptPrevious ? 'warning' : 'success',
+          type: data.needsCondition ? 'info' : data.keptPrevious ? 'warning' : 'success',
           text:
             data.message ||
             (data.keptPrevious

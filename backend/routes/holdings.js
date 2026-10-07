@@ -515,6 +515,78 @@ router.get('/plan-progress', authenticateToken, async (req, res) => {
       };
     };
 
+    const cachedInvestable = getCachedInvestable(userId);
+    const kr = { ...buildProgressBlock(krRaw, goalsKr), investable: cachedInvestable?.kr || null };
+    const us = { ...buildProgressBlock(usRaw, goalsUs), investable: cachedInvestable?.us || null };
+
+    return res.json({
+      date: {
+        year: nowKst.getFullYear(),
+        month: nowKst.getMonth() + 1,
+        day: nowKst.getDate(),
+      },
+      // 하위 호환: 기존 필드는 KR
+      goals: kr.goals,
+      profits: kr.profits,
+      progress: kr.progress,
+      investable: kr.investable,
+      kr,
+      us,
+    });
+  } catch (error) {
+    console.error('[Plan Progress] 조회 실패:', error?.message || error);
+    if (error?.stack) console.error(error.stack);
+    return res.status(500).json({
+      error: 'Plan 대비 진행사항 조회 중 오류가 발생했습니다.',
+      message: error.message,
+    });
+  }
+});
+
+// Plan 카드의 투자가능금액(현금비중) — 키움 계좌 조회라 느려서 plan-progress 와 분리
+router.get('/plan-investable', authenticateToken, async (req, res) => {
+  try {
+    const userId = String(req.user.userId);
+    const force = req.query.force === '1';
+    res.json(await getInvestable(userId, { force }));
+  } catch (error) {
+    console.error('[Plan Investable] 조회 실패:', error?.message || error);
+    res.status(500).json({
+      error: '투자가능금액 조회 중 오류가 발생했습니다.',
+      message: error.message,
+    });
+  }
+});
+
+const INVESTABLE_CACHE_TTL_MS = 60 * 1000;
+/** @type {Map<string, {at: number, value: {kr: object, us: object}}>} */
+const investableCache = new Map();
+/** @type {Map<string, Promise<{kr: object, us: object}>>} */
+const investableInFlight = new Map();
+
+function getCachedInvestable(userId) {
+  const hit = investableCache.get(userId);
+  if (!hit || Date.now() - hit.at > INVESTABLE_CACHE_TTL_MS) return null;
+  return hit.value;
+}
+
+async function getInvestable(userId, { force = false } = {}) {
+  if (!force) {
+    const cached = getCachedInvestable(userId);
+    if (cached) return cached;
+  }
+  if (investableInFlight.has(userId)) return investableInFlight.get(userId);
+  const promise = computeInvestable(userId)
+    .then((value) => {
+      investableCache.set(userId, { at: Date.now(), value });
+      return value;
+    })
+    .finally(() => investableInFlight.delete(userId));
+  investableInFlight.set(userId, promise);
+  return promise;
+}
+
+async function computeInvestable(userId) {
     let krInvestable = { amount: 0, total: 0, percent: 0 };
     let usInvestable = { amount: 0, total: 0, percent: 0 };
 
@@ -605,32 +677,8 @@ router.get('/plan-progress', authenticateToken, async (req, res) => {
       console.warn('[Plan Progress] 현금비중 계산 실패:', accountError.message);
     }
 
-    const kr = { ...buildProgressBlock(krRaw, goalsKr), investable: krInvestable };
-    const us = { ...buildProgressBlock(usRaw, goalsUs), investable: usInvestable };
-
-    return res.json({
-      date: {
-        year: nowKst.getFullYear(),
-        month: nowKst.getMonth() + 1,
-        day: nowKst.getDate(),
-      },
-      // 하위 호환: 기존 필드는 KR
-      goals: kr.goals,
-      profits: kr.profits,
-      progress: kr.progress,
-      investable: kr.investable,
-      kr,
-      us,
-    });
-  } catch (error) {
-    console.error('[Plan Progress] 조회 실패:', error?.message || error);
-    if (error?.stack) console.error(error.stack);
-    return res.status(500).json({
-      error: 'Plan 대비 진행사항 조회 중 오류가 발생했습니다.',
-      message: error.message,
-    });
-  }
-});
+    return { kr: krInvestable, us: usInvestable };
+}
 
 // Dashboard 초기 로딩용 스냅샷 조회 (holdings + prices + trailing status)
 router.get('/dashboard-snapshot', authenticateToken, async (req, res) => {
@@ -656,6 +704,62 @@ router.get('/dashboard-snapshot', authenticateToken, async (req, res) => {
       error: 'Dashboard Snapshot 조회 중 오류가 발생했습니다.',
       message: error.message
     });
+  }
+});
+
+const TRAILING_LOG_EXPORT = {
+  buy: { title: 'Trailing Buy Status', patterns: ['[Buy Trailing Stop]', 'Buy trailing arm'] },
+  sell: { title: 'Trailing Sell Status', patterns: ['[Trailing Stop]', 'Sell trailing arm'] },
+};
+
+// 오늘(서버 로컬 날짜) 서버 로그에서 Trailing Buy/Sell 줄만 추출해 backend/data 에 저장
+router.post('/trailing-log-export', authenticateToken, async (req, res) => {
+  try {
+    const side = String(req.body?.side || '').toLowerCase();
+    const spec = TRAILING_LOG_EXPORT[side];
+    if (!spec) return res.status(400).json({ error: "side 는 'buy' 또는 'sell' 이어야 합니다." });
+
+    const fs = require('fs');
+    const path = require('path');
+    const readline = require('readline');
+    const { LOG_DIR } = require('../utils/logger');
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const ymd = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const linePrefix = `[${ymd} `;
+
+    // 자정을 넘겨 실행 중인 서버의 로그도 포함되도록 파일명이 아니라 수정시각으로 고른다
+    const logFiles = (await fs.promises.readdir(LOG_DIR))
+      .filter((name) => /^server_.*\.log$/.test(name))
+      .map((name) => path.join(LOG_DIR, name))
+      .filter((file) => fs.statSync(file).mtimeMs >= dayStart)
+      .sort();
+
+    const lines = [];
+    for (const file of logFiles) {
+      const rl = readline.createInterface({
+        input: fs.createReadStream(file, { encoding: 'utf8' }),
+        crlfDelay: Infinity,
+      });
+      for await (const line of rl) {
+        if (!line.startsWith(linePrefix)) continue;
+        if (spec.patterns.some((p) => line.includes(p))) lines.push(line);
+      }
+    }
+    lines.sort();
+
+    const fileName = `${spec.title}_${ymd}_${pad(now.getHours())}_${pad(now.getMinutes())}.txt`;
+    const outPath = path.join(__dirname, '../data', fileName);
+    const header = `${spec.title} — ${ymd} (추출 ${now.toLocaleString('ko-KR')}, ${lines.length}건)\n\n`;
+    const content = header + lines.join('\n') + (lines.length ? '\n' : '');
+    await fs.promises.writeFile(outPath, content, 'utf8');
+
+    res.json({ fileName, path: outPath, count: lines.length, content });
+  } catch (error) {
+    console.error('[Trailing Log Export] 실패:', error?.message || error);
+    res.status(500).json({ error: '로그 추출 중 오류가 발생했습니다.', message: error.message });
   }
 });
 

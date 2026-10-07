@@ -51,6 +51,15 @@ const agentHeaders = () => {
   return { 'X-Agent-Id': a.agentId, 'X-Agent-Secret': a.agentSecret };
 };
 
+/** 화면에 내려줄 연결 실패 문구 (실제 설정된 중앙 주소 표시) */
+const centralUnavailableMessage = () => `중앙 서버(${getCentralApiUrl()})에 연결할 수 없습니다.`;
+
+/** 응답 없는 네트워크 오류의 원인 코드 (localhost 는 ::1·127.0.0.1 둘 다 실패하면 AggregateError) */
+const networkErrorCode = (error) => {
+  const codes = [error.code, ...(error.errors || []).map((x) => x?.code)].filter(Boolean);
+  return [...new Set(codes)].join('/') || 'NETWORK_ERROR';
+};
+
 /** 중앙 응답 에러를 { status, data } 를 가진 Error 로 변환 */
 const wrap = async (fn) => {
   try {
@@ -58,7 +67,9 @@ const wrap = async (fn) => {
     return res.data;
   } catch (error) {
     const e = new Error(
-      error.response?.data?.error || error.message || '중앙 서버 요청 실패'
+      error.response
+        ? error.response.data?.error || error.message || '중앙 서버 요청 실패'
+        : `중앙 서버(${getCentralApiUrl()}) 연결 실패: ${networkErrorCode(error)}`
     );
     e.status = error.response?.status || 502;
     e.data = error.response?.data || null;
@@ -126,7 +137,7 @@ const registerAgent = (token) =>
   wrap(() =>
     http.post(
       '/api/agent/register',
-      { name: process.env.AGENT_NAME || os.hostname(), version: require('../package.json').version },
+      { name: process.env.AGENT_NAME || os.hostname(), version: require('../utils/appVersion').appVersion },
       { headers: bearer(token) }
     )
   );
@@ -166,6 +177,7 @@ const unlinkTelegram = () =>
 
 module.exports = {
   getCentralApiUrl,
+  centralUnavailableMessage,
   getPublicKey,
   listPlans,
   login,

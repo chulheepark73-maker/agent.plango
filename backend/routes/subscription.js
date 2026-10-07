@@ -15,7 +15,7 @@ router.get('/plans', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('[구독 플랜] 중앙 오류:', error.message);
     if (error.network) {
-      return res.status(503).json({ error: '중앙 서버(plango.today)에 연결할 수 없습니다.', code: 'CENTRAL_UNAVAILABLE' });
+      return res.status(503).json({ error: central.centralUnavailableMessage(), code: 'CENTRAL_UNAVAILABLE' });
     }
     res.status(502).json({ error: error.data?.error || '구독 플랜을 불러오지 못했습니다.' });
   }
@@ -40,7 +40,7 @@ router.get('/current', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('[구독 조회] 중앙 오류:', error.message);
     if (error.network) {
-      return res.status(503).json({ error: '중앙 서버(plango.today)에 연결할 수 없습니다.', code: 'CENTRAL_UNAVAILABLE' });
+      return res.status(503).json({ error: central.centralUnavailableMessage(), code: 'CENTRAL_UNAVAILABLE' });
     }
     res.status(error.status && error.status < 500 ? error.status : 502).json({
       error: error.data?.error || '구독 정보를 불러오지 못했습니다.',
@@ -63,7 +63,7 @@ router.post('/', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('[구독 변경] 중앙 오류:', error.message);
     if (error.network) {
-      return res.status(503).json({ error: '중앙 서버(plango.today)에 연결할 수 없습니다.', code: 'CENTRAL_UNAVAILABLE' });
+      return res.status(503).json({ error: central.centralUnavailableMessage(), code: 'CENTRAL_UNAVAILABLE' });
     }
     res.status(error.status && error.status < 500 ? error.status : 502).json({
       error: error.data?.error || '구독 변경에 실패했습니다.',

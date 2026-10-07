@@ -17,6 +17,25 @@ const { parseAbsPrice } = require('./orderExecutionPrice');
 
 const LOG = '[TradingV2체결]';
 
+/** @type {Map<string, Promise<unknown>>} */
+const orderLocks = new Map();
+
+/**
+ * 같은 주문의 체결 이벤트(WS 연속 부분체결·REST 백업)를 한 번에 하나씩 처리.
+ * 동시에 돌면 모두 같은 기존 체결합을 읽고 각자 더해 수량이 부풀려진다.
+ */
+const withOrderLock = (userId, orderNo, fn) => {
+  const key = `${userId}:${String(orderNo || '').replace(/^0+/, '')}`;
+  const prev = orderLocks.get(key) || Promise.resolve();
+  const run = prev.catch(() => {}).then(fn);
+  const tail = run.catch(() => {});
+  orderLocks.set(key, tail);
+  tail.then(() => {
+    if (orderLocks.get(key) === tail) orderLocks.delete(key);
+  });
+  return run;
+};
+
 const notifyV2Refresh = () => {
   try {
     require('../services/autoTradingWsMonitor_v2').requestSubscribeRefreshSoon();
@@ -217,7 +236,10 @@ async function finalizeAfterComplete(userId, matched, order) {
  */
 async function tryCompleteTradingV2Fill(userId, evt) {
   if (!evt?.orderNo || !(evt.execQty > 0)) return null;
+  return withOrderLock(userId, evt.orderNo, () => applyWsFill(userId, evt));
+}
 
+async function applyWsFill(userId, evt) {
   let matched;
   try {
     matched = await findTradingOrderByBrokerNo(userId, evt.orderNo);
@@ -244,9 +266,14 @@ async function tryCompleteTradingV2Fill(userId, evt) {
   const execPriceRaw =
     parseAbsPrice(evt.execPrice) > 0 ? parseAbsPrice(evt.execPrice) : order.requestedPrice;
   const execPrice = roundFillPrice(execPriceRaw, stockMarket) || order.requestedPrice;
-  const execQty = Number(evt.execQty) || 0;
   const requestedQty = Number(order.requestedQty) || 0;
   const existingSum = await sumFilledQtyForOrder(order.id);
+  // 누적 체결량이 있으면 이미 적재한 만큼 뺀 나머지만 더한다 (순서가 바뀌어 와도 중복 없음)
+  const execQty =
+    evt.cumExecQty > 0
+      ? Math.max(0, evt.cumExecQty - existingSum)
+      : Number(evt.unitExecQty || evt.execQty) || 0;
+  if (!(execQty > 0)) return null;
   const filledAfterGuess = existingSum + execQty;
   const complete = isLooksComplete(evt, requestedQty, filledAfterGuess);
 
@@ -270,7 +297,12 @@ async function tryCompleteTradingV2Fill(userId, evt) {
  */
 async function applyTradingV2RestFill({ userId, orderNo, restExecQty, restExecPrice }) {
   if (!orderNo || !(restExecQty > 0)) return null;
+  return withOrderLock(userId, orderNo, () =>
+    applyRestFill({ userId, orderNo, restExecQty, restExecPrice })
+  );
+}
 
+async function applyRestFill({ userId, orderNo, restExecQty, restExecPrice }) {
   let matched;
   try {
     matched = await findTradingOrderByBrokerNo(userId, orderNo);

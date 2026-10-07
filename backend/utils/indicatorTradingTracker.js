@@ -792,7 +792,14 @@ const refreshTrackingFromCondition = async (
   const settings = state.settings || {};
   const seq = String(settings.buyCondition ?? '').trim();
   if (seq === '') {
-    throw new Error('매수 조건(영웅문 조건식)을 먼저 선택·저장하세요.');
+    // 아직 설정 전 — 오류가 아니므로 기존 목록(포지션·수동추가)만 돌려준다
+    return {
+      stocks: await mergeTrackingWithPositions(userId, await getTrackingStocks(userId)),
+      conditionSeq: '',
+      autoTradingEnabled: !!state.autoTradingEnabled,
+      needsCondition: true,
+      logs: [],
+    };
   }
 
   const kiwoomInfo = await getKiwoomInfo(userId);

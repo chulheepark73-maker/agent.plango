@@ -8,8 +8,14 @@ const cron = require('node-cron');
 const pool = require('./tradingDb');
 const { getAllUsers } = require('./userStore');
 const { getKiwoomInfo } = require('./kiwoomUtils');
-const { ensureTradingV2Tables } = require('./tradingV2Store');
+const {
+  ensureTradingV2Tables,
+  sumFilledQtyForOrder,
+  markTradingStageFilled,
+} = require('./tradingV2Store');
 const { normalizeAutoCode } = require('./autoTradingMarket');
+const { aggregateRestExecutions } = require('./orderExecutionPrice');
+const { applyTradingV2RestFill } = require('./tradingV2Fill');
 
 const LOG = '[TradingV2-EOD미체결]';
 
@@ -48,7 +54,13 @@ const listKrOpenOrders = async (userId) => {
   }));
 };
 
-const markOrderCancelledAndReopenStage = async (order) => {
+/**
+ * @param {object} order
+ * @param {number} [filledQty] 취소 시점까지 체결된 수량
+ * - BUY 일부체결: 체결분을 보유로 보고 차수 filled (매도 감시는 체결수량 기준)
+ * - SELL 일부체결: 남은 보유분을 다시 팔아야 하므로 pending 원복
+ */
+const markOrderCancelledAndReopenStage = async (order, filledQty = 0) => {
   const ordRes = await pool.query(
     `UPDATE trading_orders
      SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
@@ -63,6 +75,16 @@ const markOrderCancelledAndReopenStage = async (order) => {
       : order.stageId != null
         ? Number(order.stageId)
         : null;
+
+  if (stageId && filledQty > 0 && String(order.side).toUpperCase() === 'BUY') {
+    await markTradingStageFilled(stageId);
+    return {
+      orderCancelled: (ordRes.rowCount || 0) > 0,
+      stageReopened: false,
+      stageFilled: true,
+      stageId,
+    };
+  }
 
   if (stageId) {
     const stRes = await pool.query(
@@ -149,37 +171,90 @@ const runEodUnfilledTradingV2ForUser = async (userId, opts = {}) => {
 
   const kiwoomAPI = require('../services/kiwoomApi');
 
+  /** kt00009 체결내역을 DB에 반영하고 현재 체결수량 반환 (WS 누락분 보정) */
+  const syncFilledQty = async (order, code, venue) => {
+    try {
+      const res = await kiwoomAPI.checkOrderExecution(
+        kiwoomInfo.accessToken,
+        kiwoomInfo.appKey,
+        kiwoomInfo.appSecret,
+        kiwoomInfo.accountNo,
+        order.brokerOrderNo,
+        venue
+      );
+      const fill = res?.isExecuted
+        ? aggregateRestExecutions(res.acnt_ord_cntr_prst_array, order.price)
+        : null;
+      if (fill?.execQty > 0) {
+        await applyTradingV2RestFill({
+          userId: uid,
+          orderNo: order.brokerOrderNo,
+          restExecQty: fill.execQty,
+          restExecPrice: fill.execPrice,
+        });
+      }
+    } catch (err) {
+      logs.push(`[${code}] 체결조회 실패 ord=${order.brokerOrderNo}: ${err.message}`);
+    }
+    return Number(await sumFilledQtyForOrder(order.id)) || 0;
+  };
+
+  const requestCancel = async (order, code, venue, qty) => {
+    try {
+      const result = await kiwoomAPI.cancelOrder(
+        { symbol: code, orderNo: order.brokerOrderNo, quantity: qty },
+        kiwoomInfo.accessToken,
+        kiwoomInfo.appKey,
+        kiwoomInfo.appSecret,
+        kiwoomInfo.accountNo,
+        venue
+      );
+      const rc = result?.return_code;
+      return { ok: rc === undefined || rc === 0 || rc === '0', rc, errCode: null, msg: '' };
+    } catch (err) {
+      const msg = String(err?.message || err?.data?.return_msg || '');
+      const errCode = (msg.match(/RC(\d{4})/) || [])[1] || null;
+      return { ok: false, rc: null, errCode, msg };
+    }
+  };
+
   for (const order of orders) {
     const code = normalizeAutoCode(order.symbol, 'KRX');
     const venue = resolveVenue(order);
+    const requested = Number(order.qty) || 0;
     let cancelOk = false;
+    let filled = 0;
 
     if (order.brokerOrderNo) {
-      try {
-        const result = await kiwoomAPI.cancelOrder(
-          {
-            symbol: code,
-            orderNo: order.brokerOrderNo,
-            quantity: order.qty || 0,
-          },
-          kiwoomInfo.accessToken,
-          kiwoomInfo.appKey,
-          kiwoomInfo.appSecret,
-          kiwoomInfo.accountNo,
-          venue
-        );
-        const rc = result?.return_code;
-        // 0 성공, 이미 취소/종료된 주문도 DB는 cancelled 처리
-        cancelOk = rc === undefined || rc === 0 || rc === '0';
+      filled = await syncFilledQty(order, code, venue);
+      if (requested > 0 && filled >= requested) {
         logs.push(
-          `[${code}] ${order.side} 취소 요청 ord=${order.brokerOrderNo} rc=${rc ?? 'n/a'} ` +
-            `plan=${order.planId} stage=${order.stageId ?? '-'} ${order.strategyType || ''}`
+          `[${code}] ${order.side} 전량 체결 확인(${filled}/${requested}) → 취소 생략 ord=${order.brokerOrderNo}`
         );
-      } catch (err) {
-        logs.push(
-          `[${code}] ${order.side} 취소 API 실패 ord=${order.brokerOrderNo}: ${err.message}`
-        );
+        await new Promise((r) => setTimeout(r, 120));
+        continue;
       }
+
+      let out = await requestCancel(order, code, venue, Math.max(0, requested - filled));
+      // 4033: 취소할 수량 없음(이미 체결/취소) / 4043: 잔량보다 많이 취소 → 체결분 다시 확인
+      if (!out.ok && (out.errCode === '4033' || out.errCode === '4043')) {
+        filled = await syncFilledQty(order, code, venue);
+        if (requested > 0 && filled >= requested) {
+          logs.push(
+            `[${code}] ${order.side} RC${out.errCode} → 전량 체결 확인(${filled}/${requested}) ord=${order.brokerOrderNo}`
+          );
+          await new Promise((r) => setTimeout(r, 120));
+          continue;
+        }
+        if (out.errCode === '4043') {
+          out = await requestCancel(order, code, venue, Math.max(0, requested - filled));
+        }
+      }
+      cancelOk = out.ok;
+      logs.push(
+        `[${code}] ${order.side} 취소 ${out.ok ? '완료' : `실패 ${out.msg}`} ord=${order.brokerOrderNo} ` +
+          `체결=${filled}/${requested} plan=${order.planId} stage=${order.stageId ?? '-'} ${order.strategyType || ''}`
+      );
     } else {
       logs.push(
         `[${code}] ${order.side} broker_order_no 없음 → DB만 정리 order=${order.id} plan=${order.planId}`
@@ -187,11 +262,16 @@ const runEodUnfilledTradingV2ForUser = async (userId, opts = {}) => {
     }
 
     try {
-      const dbOut = await markOrderCancelledAndReopenStage(order);
+      const dbOut = await markOrderCancelledAndReopenStage(order, filled);
       try {
         require('./tradingV2FillRestBackup').stopTradingV2FillWatch(uid, order.brokerOrderNo);
       } catch {
         /* ignore */
+      }
+      if (dbOut.stageFilled) {
+        logs.push(
+          `[${code}] 일부 체결(${filled}/${requested}) → stage filled 유지 stageId=${dbOut.stageId} order=${order.id}`
+        );
       }
       if (dbOut.stageReopened) {
         logs.push(

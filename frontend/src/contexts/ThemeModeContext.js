@@ -75,6 +75,9 @@ const createAppTheme = (mode) => {
             },
           },
         },
+        MuiTextField: {
+          defaultProps: { autoComplete: 'off' },
+        },
         MuiPaper: {
           defaultProps: { elevation: 0 },
           styleOverrides: {
@@ -134,6 +137,9 @@ const createAppTheme = (mode) => {
             scrollbarColor: '#d0d7de #f6f8fa',
           },
         },
+      },
+      MuiTextField: {
+        defaultProps: { autoComplete: 'off' },
       },
       MuiPaper: {
         defaultProps: { elevation: 0 },

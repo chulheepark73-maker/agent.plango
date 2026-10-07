@@ -525,8 +525,16 @@ const WatchlistRow = memo(({
       </TableCell>
       <TableCell align="center" sx={WATCHLIST_STAGE_COL_SX}>
         {targetBuy?.infinite ? (
-          <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.4 }} aria-label="무한매매">
-            진행중
+          <Typography
+            variant="body2"
+            sx={{
+              fontWeight: 600,
+              lineHeight: 1.4,
+              color: targetBuy.auto === 'Y' && targetBuy.infiniteInProgress ? 'text.primary' : 'text.secondary',
+            }}
+            aria-label="무한매매"
+          >
+            {targetBuy.auto !== 'Y' ? '정지' : targetBuy.infiniteInProgress ? '진행중' : '대기'}
           </Typography>
         ) : targetBuy?.stage != null && Number(targetBuy.stage) > 0 ? (
           <Typography
@@ -558,7 +566,18 @@ const WatchlistRow = memo(({
         )}
       </TableCell>
       <TableCell align="center" sx={WATCHLIST_MID_COL_SX}>
-        {targetBuy?.target_qty ? (
+        {targetBuy?.infinite && targetBuy.infiniteInProgress ? (
+          <Typography variant="body2" title="보유 수량 (현재 사이클 체결 기준)">
+            {formatNumber(targetBuy.infiniteHeldQty)}주
+          </Typography>
+        ) : targetBuy?.infinite && targetBuy.target_qty ? (
+          <Typography variant="body2" color="text.secondary" title="진입가 기준 1회 매수 예정 수량">
+            {formatNumber(targetBuy.target_qty)}주
+            <Box component="span" sx={{ fontSize: '0.75rem', ml: 0.25 }}>
+              (예정)
+            </Box>
+          </Typography>
+        ) : targetBuy?.target_qty ? (
           <Typography variant="body2">
             {formatNumber(targetBuy.target_qty)}주
           </Typography>
@@ -663,12 +682,38 @@ const WatchlistRow = memo(({
     prevProps.strategyTypeLabel === nextProps.strategyTypeLabel &&
     prevProps.targetBuy?.stage === nextProps.targetBuy?.stage &&
     prevProps.targetBuy?.infinite === nextProps.targetBuy?.infinite &&
+    prevProps.targetBuy?.infiniteInProgress === nextProps.targetBuy?.infiniteInProgress &&
+    prevProps.targetBuy?.infiniteHeldQty === nextProps.targetBuy?.infiniteHeldQty &&
     prevProps.targetBuy?.alsoInfinite === nextProps.targetBuy?.alsoInfinite &&
     prevProps.onOpenChart === nextProps.onOpenChart
   );
 });
 
 WatchlistRow.displayName = 'WatchlistRow';
+
+/**
+ * 무한매매 플랜 상세(orders·fills) → 현재 사이클 실제 진행 상태
+ * inProgress: 매수 체결 있음, heldQty: 매수 체결 − 매도 체결
+ */
+const getInfiniteProgress = (detail) => {
+  const cycleId = detail?.currentCycleId;
+  const inCycle = (o) => cycleId == null || o.cycleId == null || Number(o.cycleId) === Number(cycleId);
+  const sideOf = new Map(
+    (detail?.orders || [])
+      .filter(inCycle)
+      .map((o) => [Number(o.id), String(o.side || '').toUpperCase()])
+  );
+  let bought = 0;
+  let sold = 0;
+  for (const f of detail?.fills || []) {
+    const qty = Number(f.fillQty) || 0;
+    if (qty <= 0) continue;
+    const side = sideOf.get(Number(f.orderId));
+    if (side === 'BUY') bought += qty;
+    else if (side === 'SELL') sold += qty;
+  }
+  return { inProgress: bought > 0, heldQty: Math.max(0, Math.floor(bought - sold)) };
+};
 
 const DEFAULT_BUY_TOTAL_KR = 1000000;
 const DEFAULT_BUY_TOTAL_US = 1000;
@@ -685,6 +730,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
   const [loading, setLoading] = useState(true);
   const [priceLoading, setPriceLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [accountNoMissing, setAccountNoMissing] = useState(false);
   const [searchName, setSearchName] = useState('');
   const [searchingStock, setSearchingStock] = useState(false);
   const [foundStockCode, setFoundStockCode] = useState('');
@@ -784,22 +830,8 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
 
       const cfg = detail.strategyConfig || {};
       // 무한매매 진행 중 = 현재 사이클에 매수 체결 있음 → 진입가 변경 금지
-      let infiniteInProgress = false;
-      if (detail.strategyType === 'INFINITE_TRADE') {
-        const infCycleId = detail.currentCycleId;
-        const buyOrderIds = new Set(
-          (detail.orders || [])
-            .filter(
-              (o) =>
-                String(o.side || '').toUpperCase() === 'BUY' &&
-                (infCycleId == null || o.cycleId == null || Number(o.cycleId) === Number(infCycleId))
-            )
-            .map((o) => Number(o.id))
-        );
-        infiniteInProgress = (detail.fills || []).some(
-          (f) => buyOrderIds.has(Number(f.orderId)) && Number(f.fillQty) > 0
-        );
-      }
+      const infiniteInProgress =
+        detail.strategyType === 'INFINITE_TRADE' && getInfiniteProgress(detail).inProgress;
       const trailingSrc =
         (infinitePlan && primary.strategyType === 'INFINITE_TRADE' ? cfg : null) ||
         (splitDetail?.strategyConfig || cfg);
@@ -1350,6 +1382,21 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
     };
   }, [watchlistGroupCount]);
 
+  // 키·토큰은 있는데 계좌번호가 없으면 자동매매 감시가 동작하지 않음
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get('/settings')
+      .then(({ data }) => {
+        if (cancelled) return;
+        setAccountNoMissing(!!data?.hasAccessToken && !String(data?.kiwoomAccountNo || '').trim());
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // 관심종목 현재가 조회 (목록 변경 시, 로딩 표시)
   useEffect(() => {
     if (watchlist.length > 0) {
@@ -1441,6 +1488,9 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
       const isInfinite = !!item.infinite;
       const alsoInfinite = !!item.alsoInfinite;
       const stage = isInfinite ? null : buyCur > 0 ? buyCur : null;
+      const infiniteFields = isInfinite
+        ? { infiniteInProgress: !!item.infiniteInProgress, infiniteHeldQty: item.infiniteHeldQty || 0 }
+        : {};
 
       // buyX_end가 'Y'인 경우 매수가 완료된 것이므로 표시하지 않음
       const buyXEnd = buyCur > 0 ? item[`buy${buyCur}_end`] : null;
@@ -1452,6 +1502,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
           stage,
           infinite: isInfinite,
           alsoInfinite,
+          ...infiniteFields,
         });
         console.log(`[auto_trading 맵] ${item.stockCode}: buy_cur=${buyCur}, buy${buyCur}_end=Y (매수완료), 표시하지 않음, auto=${autoValue}`);
         return; // 다음 항목으로
@@ -1471,6 +1522,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
           stage,
           infinite: isInfinite,
           alsoInfinite,
+          ...infiniteFields,
         });
         console.log(`[auto_trading 맵] ${item.stockCode}: buy_cur=${buyCur}, 매수목표가=${buyPrice}, 수량=${buyQty}, auto=${autoValue}`);
       } else {
@@ -1480,6 +1532,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
           stage,
           infinite: isInfinite,
           alsoInfinite,
+          ...infiniteFields,
         });
         console.log(`[auto_trading 맵] ${item.stockCode}: buy_cur=${buyCur}, 매수가격 없음, auto=${autoValue}`);
       }
@@ -1586,10 +1639,13 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
             price > 0 && Number.isFinite(unitAmt) && unitAmt > 0
               ? Math.floor(unitAmt / price)
               : 0;
+          const progress = getInfiniteProgress(detail);
           list.push({
             stockCode,
             auto,
             infinite: true,
+            infiniteInProgress: progress.inProgress,
+            infiniteHeldQty: progress.heldQty,
             buy_cur: price > 0 ? 1 : 0,
             buy1_price: price,
             buy1_qty: qty,
@@ -2227,6 +2283,12 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
             자동매매 설정
           </Button>
         </Box>
+      )}
+
+      {accountNoMissing && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          계좌번호를 입력해야 자동매매가 동작합니다. 환경설정의 &quot;키움증권 계좌번호 설정&quot;에서 계좌번호를 저장해 주세요.
+        </Alert>
       )}
 
       {errorMessage && (

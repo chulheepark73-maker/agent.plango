@@ -20,6 +20,7 @@ const {
   executeTradingV2BuyOrder,
   executeTradingV2SellOrder,
   hasOpenOrderForStage,
+  isV2OrderOnCooldown,
 } = require('../utils/tradingV2OrderExec');
 const { avgCostFromPlanFills, clampBuyBySeed, netFilledQtyForSplitStage, resolveSplitSellTarget } = require('../utils/infiniteTradeBands');
 const { splitStagePosition } = require('../utils/splitTradeLots');
@@ -32,7 +33,6 @@ const { normalizeAutoCode, isUsMarket } = require('../utils/autoTradingMarket');
 const SUBSCRIBE_REFRESH_MS = 30000;
 const OFF_MARKET_CHECK_MS = 60000;
 const WARMUP_REFRESH_MS = 5000;
-const CLOSED_DAY_CHECK_MS = 60 * 60 * 1000;
 const TICK_DEBOUNCE_MS = 800;
 const SUBSCRIBE_SOON_MS = 2000;
 const REGISTRY_KEY = 'auto_v2';
@@ -103,8 +103,10 @@ function buildWatchTargets(plan) {
 
   if (plan.strategyType === 'INFINITE_TRADE') {
     const cycleId = plan.currentCycleId != null ? Number(plan.currentCycleId) : null;
-    const { avgCost, remQty, buyQty } = avgCostFromPlanFills(plan, { cycleId });
+    // 진입 여부는 접수된 주문까지 포함(재진입 방지), 매도는 실제 체결분만
+    const { buyQty } = avgCostFromPlanFills(plan, { cycleId });
     const hasEntry = buyQty > 0;
+    const { avgCost, remQty } = avgCostFromPlanFills(plan, { cycleId, includeSubmitted: false });
 
     // 1) 1회 entry — 체결 전 buyEntry trailing 매수
     if (!hasEntry) {
@@ -536,8 +538,14 @@ async function runChecksForTick(m, codeKey) {
     const price = parseFloat(priceRow.price);
     if (!Number.isFinite(price) || price <= 0) return;
 
+    const usOpen = isUsTradingHours();
+    const krOpen = isKRXSessionOpen() || isNXTTradingHours();
     for (const t of targets) {
       if (t.side === 'WATCH') continue;
+      // 화면 시세 구독으로 장외 틱이 들어와도 arm 하지 않음 (arm→세션종료 stop 반복 방지)
+      const isUsTarget = t.stockMarket === 'US' || isUsMarket(t.stockMarket, t.stockCode);
+      if (isUsTarget ? !usOpen : !krOpen) continue;
+      if (t.planId && isV2OrderOnCooldown(t.side, t.planId)) continue;
 
       if (t.side === 'BUY' && price < t.targetPrice) {
         const checkKey = `${m.userId}_${t.stockCode}_${t.stage}_v2p${t.planId}`;
@@ -615,7 +623,7 @@ async function runChecksForTick(m, codeKey) {
                 : plan.currentCycleId != null
                   ? Number(plan.currentCycleId)
                   : null;
-            const { remQty } = avgCostFromPlanFills(plan, { cycleId });
+            const { remQty } = avgCostFromPlanFills(plan, { cycleId, includeSubmitted: false });
             if (!(remQty > 0)) continue;
             sellQty = Math.min(sellQty > 0 ? sellQty : remQty, remQty);
           } catch (err) {
@@ -694,8 +702,9 @@ async function refreshSubscriptions() {
 
     const users = await getValidUsers();
     if (users.length === 0) {
+      // 장중인데 대상이 없으면 토큰 만료·계좌번호 누락 등 곧 풀릴 수 있는 상황
       destroyAllMonitors();
-      scheduleRefresh(CLOSED_DAY_CHECK_MS);
+      scheduleRefresh(OFF_MARKET_CHECK_MS);
       return;
     }
 

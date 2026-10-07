@@ -104,7 +104,7 @@ router.post('/server-registration', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('[서버 등록] 오류:', error.message);
     if (error.network) {
-      return res.status(503).json({ error: '중앙 서버(plango.today)에 연결할 수 없습니다.', code: 'CENTRAL_UNAVAILABLE' });
+      return res.status(503).json({ error: central.centralUnavailableMessage(), code: 'CENTRAL_UNAVAILABLE' });
     }
     res.status(error.status && error.status < 500 ? error.status : 502).json({
       error: error.data?.error || error.message || '서버 등록 중 오류가 발생했습니다.',
@@ -137,7 +137,7 @@ router.post(
         .status(error.network ? 503 : error.status)
         .json(
           error.network
-            ? { error: '중앙 서버(plango.today)에 연결할 수 없습니다.', code: 'CENTRAL_UNAVAILABLE' }
+            ? { error: central.centralUnavailableMessage(), code: 'CENTRAL_UNAVAILABLE' }
             : error.data || { error: error.message }
         );
     }
@@ -233,7 +233,7 @@ router.get('/me', authenticateToken, async (req, res) => {
 /** 중앙 오류를 그대로 전달 (중앙 401 은 프론트 로그아웃을 유발하므로 그대로 둔다) */
 const sendCentralError = (res, error, fallback) => {
   if (error.network) {
-    return res.status(503).json({ error: '중앙 서버(plango.today)에 연결할 수 없습니다.', code: 'CENTRAL_UNAVAILABLE' });
+    return res.status(503).json({ error: central.centralUnavailableMessage(), code: 'CENTRAL_UNAVAILABLE' });
   }
   res.status(error.status && error.status < 500 ? error.status : 502).json({
     error: error.data?.error || error.data?.errors?.[0]?.msg || error.message || fallback,

@@ -10,7 +10,6 @@ import TradingV21 from './pages/TradingV21';
 import Settings from './pages/Settings';
 import Report from './pages/Report';
 import ServerRegistration from './pages/ServerRegistration';
-import ComingSoon from './pages/ComingSoon';
 import SubscriptionPlans from './pages/SubscriptionPlans';
 import Profile from './pages/Profile';
 import ChangePassword from './pages/ChangePassword';
@@ -40,9 +39,7 @@ function App() {
               <Route path="report" element={<Report />} />
               <Route path="settings" element={<Settings />} />
               <Route path="server-registration" element={<ServerRegistration />} />
-              <Route path="server-management" element={<ComingSoon title="서버관리" />} />
               <Route path="subscription-plans" element={<SubscriptionPlans />} />
-              <Route path="subscription-apply" element={<ComingSoon title="구독신청" />} />
               <Route path="profile" element={<Profile />} />
               <Route path="telegram-settings" element={<TelegramSettings />} />
               <Route path="change-password" element={<ChangePassword />} />

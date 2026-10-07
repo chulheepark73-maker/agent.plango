@@ -47,8 +47,18 @@ const isTradingHours = () => {
   return timeInMinutes >= startTime && timeInMinutes <= endTime;
 };
 
+/** 모의투자는 국내·미국 모두 정규장만 감시·주문 (시간외·NXT·프리/애프터 제외) */
+const isMockTrading = () => {
+  try {
+    return require('./kiwoomMode').isMockMode();
+  } catch {
+    return false;
+  }
+};
+
 /** KRX 장후 시간외 종가 (15:30~16:00, 주중·비공휴) — 정규장과 15:30 분 겹침 시 정규장 우선 */
 const isKRXExtendedCloseHours = () => {
+  if (isMockTrading()) return false;
   if (isWeekend()) return false;
   if (isHolidaySync()) return false;
 
@@ -61,6 +71,7 @@ const isKRXExtendedCloseHours = () => {
 
 /** KRX 애프터마켓 (한국 시간 16:00-20:00, 주중·비공휴) */
 const isKRXAfterMarketHours = () => {
+  if (isMockTrading()) return false;
   if (isWeekend()) return false;
   if (isHolidaySync()) return false;
 
@@ -77,6 +88,7 @@ const isKRXSessionOpen = () =>
 
 // NXT 거래시간 확인 (한국 시간 기준 08:00-08:50만 — 이후는 KRX)
 const isNXTTradingHours = () => {
+  if (isMockTrading()) return false;
   const now = new Date();
   const koreaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
   const hour = koreaTime.getHours();
@@ -281,6 +293,7 @@ const isUsAfterMarketHours = () => {
  * 한국 주말/공휴일과 무관 — 금요 야간(KST 토요 새벽) 등에도 true 가능
  */
 const isUsTradingHours = () => {
+  if (isMockTrading()) return isUsRegularHours();
   const t = getNewYorkTimeParts();
   if (!t || !isNyWeekday(t.weekday)) return false;
   return t.mins >= 4 * 60 && t.mins < 20 * 60;

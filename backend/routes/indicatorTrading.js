@@ -263,7 +263,9 @@ router.post('/tracking/refresh', authenticateToken, async (req, res) => {
       syncRealtime: true,
     });
     res.json({
-      message: `조건식 종목 ${result.stocks.length}개 불러옴`,
+      message: result.needsCondition
+        ? '매수 조건(영웅문 조건식)을 선택·저장하면 조건식 종목을 불러옵니다.'
+        : `조건식 종목 ${result.stocks.length}개 불러옴`,
       ...result,
     });
   } catch (error) {

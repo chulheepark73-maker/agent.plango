@@ -146,7 +146,7 @@ const runBandBuyForPlan = async (userId, kiwoomInfo, plan, slot, dateKey) => {
     return { skipped: true, reason: 'already_today' };
   }
 
-  const { avgCost, remQty } = avgCostFromPlanFills(plan);
+  const { avgCost, remQty } = avgCostFromPlanFills(plan, { includeSubmitted: false });
   if (!(avgCost > 0) || remQty <= 0) {
     return { skipped: true, reason: 'no_position' };
   }
