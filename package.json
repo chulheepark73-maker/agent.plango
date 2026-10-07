@@ -1,7 +1,7 @@
 {
   "name": "kiwoom-auto-trading",
   "version": "1.0.20261004.2",
-  "description": "PlanGo.Today Agent",
+  "description": "PlanGo Agent",
   "main": "backend/server.js",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",

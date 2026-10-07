@@ -13,7 +13,7 @@
  *   GET    /api/auth/me                     → { id, email, ..., subscription... }
  *   POST   /api/auth/subscription           { planCode } → { message, subscription... }
  *   POST   /api/agent/register              { name, version } → { agentId, agentSecret }
- * 에이전트 자격 (X-Agent-Id / X-Agent-Secret)
+ * 에이전트 자격 (X-Agent-Id / X-Agent-Secret, X-Agent-Version 은 중앙 목록의 버전 갱신용)
  *   GET    /api/agent/owner                 → { user, subscription, telegram }
  *   POST   /api/agent/notify                { text } → { ok }
  *   POST   /api/agent/telegram/deep-link    → { botUrl, botUsername, linkExpiresAt, telegramLinkPending }
@@ -23,6 +23,7 @@ const fs = require('fs');
 const os = require('os');
 const axios = require('axios');
 const { loadAgentIdentity } = require('../utils/agentIdentity');
+const { appVersion } = require('../utils/appVersion');
 
 const OWNER_CACHE_TTL_MS = 60 * 1000;
 
@@ -48,7 +49,7 @@ const agentHeaders = () => {
     e.data = { error: message, code: e.code };
     throw e;
   }
-  return { 'X-Agent-Id': a.agentId, 'X-Agent-Secret': a.agentSecret };
+  return { 'X-Agent-Id': a.agentId, 'X-Agent-Secret': a.agentSecret, 'X-Agent-Version': appVersion };
 };
 
 /** 화면에 내려줄 연결 실패 문구 (실제 설정된 중앙 주소 표시) */
@@ -133,11 +134,14 @@ const getMe = (token) => wrap(() => http.get('/api/auth/me', { headers: bearer(t
 const changeSubscription = (token, planCode) =>
   wrap(() => http.post('/api/auth/subscription', { planCode }, { headers: bearer(token) }));
 
+const listMySubscriptions = (token) =>
+  wrap(() => http.get('/api/auth/subscriptions', { headers: bearer(token) }));
+
 const registerAgent = (token) =>
   wrap(() =>
     http.post(
       '/api/agent/register',
-      { name: process.env.AGENT_NAME || os.hostname(), version: require('../utils/appVersion').appVersion },
+      { name: process.env.AGENT_NAME || os.hostname(), version: appVersion },
       { headers: bearer(token) }
     )
   );
@@ -187,6 +191,7 @@ module.exports = {
   changePassword,
   getMe,
   changeSubscription,
+  listMySubscriptions,
   registerAgent,
   getOwnerStatus,
   getCachedOwnerStatus,

@@ -69,7 +69,17 @@ const bodyCellSx = {
   color: 'text.primary',
   borderColor: 'divider',
   fontSize: '0.8125rem',
+  lineHeight: '20px',
   py: 0.6,
+  whiteSpace: 'nowrap',
+};
+
+/** 좌우 카드 행 높이를 맞추기 위해 긴 종목명은 한 줄 말줄임 */
+const nameCellSx = {
+  ...bodyCellSx,
+  maxWidth: 180,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
 };
 
 const STRATEGY_LABEL = {
@@ -114,7 +124,7 @@ const Report = () => {
   const [error, setError] = useState(null);
   const [market, setMarket] = useState('KR');
   const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState('all');
+  const [month, setMonth] = useState(now.getMonth() + 1);
 
   const fetchData = useCallback(async () => {
     try {
@@ -249,11 +259,12 @@ const Report = () => {
       prev.invested += t.buyAmount;
       map.set(key, prev);
     });
-    return [...map.values()].sort((a, b) => b.profit - a.profit);
+    const rateOf = (s) => (s.invested > 0 ? s.profit / s.invested : 0);
+    return [...map.values()].sort((a, b) => rateOf(b) - rateOf(a)).slice(0, 7);
   }, [periodTrades]);
 
   const recent = useMemo(
-    () => [...periodTrades].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 15),
+    () => [...periodTrades].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 7),
     [periodTrades]
   );
 
@@ -478,9 +489,14 @@ const Report = () => {
                           const rate = s.invested > 0 ? (s.profit / s.invested) * 100 : 0;
                           return (
                             <TableRow key={s.stockCode} hover>
-                              <TableCell sx={bodyCellSx}>
+                              <TableCell sx={nameCellSx} title={`${s.stockName} ${s.stockCode}`}>
                                 {s.stockName}
-                                <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                                <Typography
+                                  component="span"
+                                  variant="caption"
+                                  color="text.secondary"
+                                  sx={{ ml: 0.5, lineHeight: 'inherit' }}
+                                >
                                   {s.stockCode}
                                 </Typography>
                               </TableCell>
@@ -532,7 +548,9 @@ const Report = () => {
                         recent.map((t) => (
                           <TableRow key={`${t.orderId || t.stockCode}-${t.date}`} hover>
                             <TableCell sx={{ ...bodyCellSx, whiteSpace: 'nowrap' }}>{t.date.slice(5, 16)}</TableCell>
-                            <TableCell sx={bodyCellSx}>{t.stockName || t.stockCode}</TableCell>
+                            <TableCell sx={nameCellSx} title={t.stockName || t.stockCode}>
+                              {t.stockName || t.stockCode}
+                            </TableCell>
                             <TableCell align="center" sx={bodyCellSx}>
                               {STRATEGY_LABEL[t.kind] || '-'}
                               {t.kind !== 'INFINITE_TRADE' && t.kind !== 'LIQUIDATE' && t.sell_cur

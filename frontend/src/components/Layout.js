@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   AppBar,
@@ -35,6 +35,8 @@ import LightModeIcon from '@mui/icons-material/LightMode';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import { useAuth } from '../contexts/AuthContext';
 import { useThemeMode } from '../contexts/ThemeModeContext';
+import apiClient from '../utils/axios';
+import Footer from './Footer';
 
 // light / dark AppBar 대비에 맞춘 아이콘 색
 const menuItems = [
@@ -90,6 +92,10 @@ const sideMenuGroups = [
       { Icon: LockResetIcon, path: '/change-password', label: '비밀번호변경' },
     ],
   },
+  {
+    title: '프로그램 정보',
+    items: [{ key: 'app-version', info: 'appVersion' }],
+  },
 ];
 
 const SIDEBAR_WIDTH = 180;
@@ -103,6 +109,20 @@ const Layout = () => {
   const { logout } = useAuth();
   const { setThemeMode } = useThemeMode();
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get('/settings/version')
+      .then(({ data }) => {
+        if (!cancelled) setAppVersion(data?.appVersion || '');
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleThemeToggle = useCallback(() => {
     setThemeMode(isDark ? 'white' : 'dark').catch(() => {});
@@ -135,7 +155,7 @@ const Layout = () => {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Typography variant="h5" component="div" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
               <CandlestickChartIcon sx={{ fontSize: '1.4rem' }} />
-              PlanGo.Today Agent
+              PlanGo Agent
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
@@ -256,7 +276,16 @@ const Layout = () => {
               </Typography>
             }
           >
-            {group.items.map((item) => (
+            {group.items.map((item) => item.info ? (
+              <Box
+                key={item.key}
+                sx={{ mx: 1, px: 2, py: 0.75, display: 'flex', alignItems: 'center' }}
+              >
+                <Typography variant="caption" sx={{ wordBreak: 'break-all' }}>
+                  {appVersion ? `v${appVersion}` : '-'}
+                </Typography>
+              </Box>
+            ) : (
               <ListItemButton
                 key={item.path}
                 selected={isActive(item.path)}
@@ -288,9 +317,14 @@ const Layout = () => {
           mt: `${APPBAR_HEIGHT}px`,
           minHeight: `calc(100vh - ${APPBAR_HEIGHT}px)`,
           backgroundColor: 'background.default', // 테마의 배경색 사용
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
-        <Outlet />
+        <Box sx={{ flex: 1 }}>
+          <Outlet />
+        </Box>
+        <Footer />
       </Box>
     </Box>
   );

@@ -98,8 +98,6 @@ const ServerRegistration = () => {
               <Typography variant="body2">{formatKstDateTime(status.registeredAt)}</Typography>
               <Typography variant="body2" color="text.secondary">마지막 동기화</Typography>
               <Typography variant="body2">{formatKstDateTime(status.lastSyncedAt)}</Typography>
-              <Typography variant="body2" color="text.secondary">중앙 서버</Typography>
-              <Typography variant="body2">{status.centralUrl}</Typography>
             </Box>
           ) : (
             <Typography variant="body2" color="text.secondary">
@@ -110,10 +108,11 @@ const ServerRegistration = () => {
         </CardContent>
       </Card>
 
+      {status && !registered && (
       <Card>
         <CardContent>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
-            {registered ? '서버 다시 등록' : '이 서버 등록하기'}
+            이 서버 등록하기
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             비밀번호를 다시 확인한 뒤 PlanGo 인증서비스 에서 이 서버의 에이전트 키를 발급받습니다.
@@ -137,19 +136,18 @@ const ServerRegistration = () => {
               sx={{ minWidth: 260 }}
             />
             <Button type="submit" variant="contained" disabled={loading || !password}>
-              {loading ? '등록 중...' : registered ? '다시 등록' : '서버 등록'}
+              {loading ? '등록 중...' : '서버 등록'}
             </Button>
           </Box>
         </CardContent>
       </Card>
+      )}
 
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
         <DialogTitle>서버 등록</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {registered
-              ? '에이전트 키를 새로 발급합니다. 기존 키는 더 이상 사용할 수 없습니다. 계속할까요?'
-              : '이 서버를 PlanGo.Today 에 등록합니다. 이 계정으로 다른 서버가 등록되어 있다면 해제됩니다. 계속할까요?'}
+            이 서버를 PlanGo.Today 에 등록합니다. 이 계정으로 다른 서버가 등록되어 있다면 해제됩니다. 계속할까요?
           </DialogContentText>
         </DialogContent>
         <DialogActions>

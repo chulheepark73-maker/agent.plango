@@ -46,6 +46,10 @@ const parseTargetAmount = (value) => {
 };
 
 // 환경설정 조회
+router.get('/version', authenticateToken, (req, res) => {
+  res.json({ appVersion });
+});
+
 router.get('/', authenticateToken, async (req, res) => {
   try {
     await ensurePlanStatusTable();

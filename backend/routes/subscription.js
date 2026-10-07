@@ -48,6 +48,22 @@ router.get('/current', authenticateToken, async (req, res) => {
   }
 });
 
+/** 내 구독(결제) 내역 — 중앙 subscriptions */
+router.get('/history', authenticateToken, async (req, res) => {
+  try {
+    const data = await central.listMySubscriptions(req.token);
+    res.json({ subscriptions: Array.isArray(data?.subscriptions) ? data.subscriptions : [] });
+  } catch (error) {
+    console.error('[구독 내역] 중앙 오류:', error.message);
+    if (error.network) {
+      return res.status(503).json({ error: central.centralUnavailableMessage(), code: 'CENTRAL_UNAVAILABLE' });
+    }
+    res.status(error.status && error.status < 500 ? error.status : 502).json({
+      error: error.data?.error || '결제 내역을 불러오지 못했습니다.',
+    });
+  }
+});
+
 /** 구독 플랜 변경 { planCode } — 중앙에서 처리 후 즉시 동기화(무료 전환 시 자동매매 OFF 포함) */
 router.post('/', authenticateToken, async (req, res) => {
   try {
