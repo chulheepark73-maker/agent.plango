@@ -66,10 +66,12 @@ const buildSplitLots = (plan, opts = {}) => {
     const qty = Math.floor(toNum(f.fillQty));
     if (!(qty > 0)) continue;
     filledOrderIds.add(Number(ord.id));
+    // fill_price 는 호가 반올림값일 수 있음 — 정확한 단가는 fill_amount / qty
+    const amount = toNum(f.fillAmount);
     events.push({
       order: ord,
       qty,
-      price: toNum(f.fillPrice),
+      price: amount > 0 ? amount / toNum(f.fillQty) : toNum(f.fillPrice),
       at: f.filledAt || f.createdAt || null,
       seq: Number(f.id) || 0,
     });

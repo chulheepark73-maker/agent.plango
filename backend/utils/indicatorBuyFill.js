@@ -310,7 +310,6 @@ const registerIndicatorBuyPending = (payload) => {
     buyQty,
     buyAmount: buyAmount || 0,
     priceType: priceType || 'limit',
-    orderPrice,
   });
 
   // 첫 REST 백업은 2분 뒤 (그 전에는 WS 00에 의존)

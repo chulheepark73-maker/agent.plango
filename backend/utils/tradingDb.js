@@ -1,5 +1,5 @@
 /**
- * 매매 DB (SQLite, better-sqlite3)
+ * 매매 DB (SQLite, Node 내장 node:sqlite — 네이티브 모듈 없이 단일 실행파일로 배포 가능)
  *
  * 기존 store 코드가 쓰던 pg Pool 과 같은 모양을 제공한다.
  *   query(sql, params) → Promise<{ rows, rowCount }>
@@ -21,10 +21,12 @@
  */
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
+const { DatabaseSync } = require('node:sqlite');
+const { DATA_DIR, readSeaAsset } = require('./appPaths');
 
-const DB_PATH = process.env.TRADING_DB_PATH || path.join(__dirname, '..', 'data', 'trading.db');
+const DB_PATH = process.env.TRADING_DB_PATH || path.join(DATA_DIR, 'trading.db');
 const SCHEMA_PATH = path.join(__dirname, '..', 'db', 'trading_schema.sql');
+const SCHEMA_ASSET = 'trading_schema.sql';
 
 const NOW_SQL = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
@@ -35,12 +37,12 @@ const CAST_TYPES =
 const CAST_RE = new RegExp(`::(?:${CAST_TYPES})(?:\\(\\d+(?:,\\s*\\d+)?\\))?(?:\\[\\])?`, 'gi');
 
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('synchronous = NORMAL');
-db.pragma('foreign_keys = ON');
-db.pragma('busy_timeout = 5000');
-db.exec(fs.readFileSync(SCHEMA_PATH, 'utf8'));
+const db = new DatabaseSync(DB_PATH, { timeout: 5000 });
+db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA synchronous = NORMAL');
+db.exec('PRAGMA foreign_keys = ON');
+db.exec('PRAGMA busy_timeout = 5000');
+db.exec(readSeaAsset(SCHEMA_ASSET) ?? fs.readFileSync(SCHEMA_PATH, 'utf8'));
 
 /** CREATE TABLE IF NOT EXISTS 는 기존 테이블에 컬럼을 더하지 않으므로, 이후 추가된 컬럼은 여기서 보강한다 */
 const ADDED_COLUMNS = [
@@ -115,36 +117,57 @@ const toBindValue = (v) => {
   return v;
 };
 
-const fromRow = (row) => {
-  for (const key of Object.keys(row)) {
-    const v = row[key];
-    if (v === null) continue;
-    if (boolColumns.has(key) && (v === 0 || v === 1)) row[key] = v === 1;
+/** node:sqlite 행은 null-prototype 객체 — 일반 객체로 옮기며 값 변환 */
+const fromRow = (raw) => {
+  const row = {};
+  for (const key of Object.keys(raw)) {
+    let v = raw[key];
+    if (v === null) {
+      row[key] = v;
+      continue;
+    }
+    if (v instanceof Uint8Array) v = Buffer.from(v.buffer, v.byteOffset, v.byteLength);
+    else if (boolColumns.has(key) && (v === 0 || v === 1)) v = v === 1;
     else if (jsonColumns.has(key) && typeof v === 'string') {
       try {
-        row[key] = JSON.parse(v);
+        v = JSON.parse(v);
       } catch {
         /* 문자열 그대로 */
       }
-    } else if (typeof v === 'string' && ISO_RE.test(v)) row[key] = new Date(v);
+    } else if (typeof v === 'string' && ISO_RE.test(v)) v = new Date(v);
+    row[key] = v;
   }
   return row;
 };
 
+/** @type {Map<string, { stmt: import('node:sqlite').StatementSync, reader: boolean }>} */
 const statements = new Map();
 
 const prepare = (sql) => {
-  let stmt = statements.get(sql);
-  if (!stmt) {
-    stmt = db.prepare(sql);
-    statements.set(sql, stmt);
+  let entry = statements.get(sql);
+  if (!entry) {
+    const stmt = db.prepare(sql);
+    // 결과 컬럼이 있으면 조회문 (SELECT · PRAGMA · ... RETURNING)
+    entry = { stmt, reader: stmt.columns().length > 0 };
+    statements.set(sql, entry);
   }
-  return stmt;
+  return entry;
+};
+
+/** SQLite 확장 오류 코드 → 이름 */
+const SQLITE_ERRCODE_NAMES = {
+  2067: 'SQLITE_CONSTRAINT_UNIQUE',
+  1555: 'SQLITE_CONSTRAINT_PRIMARYKEY',
+  787: 'SQLITE_CONSTRAINT_FOREIGNKEY',
+  1299: 'SQLITE_CONSTRAINT_NOTNULL',
+  275: 'SQLITE_CONSTRAINT_CHECK',
+  5: 'SQLITE_BUSY',
+  6: 'SQLITE_LOCKED',
 };
 
 /** pg 오류 코드 호환 (unique 위반 23505 등) */
 const mapError = (error, sql) => {
-  const code = String(error.code || '');
+  const code = SQLITE_ERRCODE_NAMES[error.errcode] || String(error.code || '');
   if (code === 'SQLITE_CONSTRAINT_UNIQUE' || code === 'SQLITE_CONSTRAINT_PRIMARYKEY') error.code = '23505';
   else if (code === 'SQLITE_CONSTRAINT_FOREIGNKEY') error.code = '23503';
   else if (code === 'SQLITE_CONSTRAINT_NOTNULL') error.code = '23502';
@@ -161,15 +184,17 @@ const runQuery = (text, values = []) => {
       db.exec(sql);
       return { rows: [], rowCount: 0 };
     }
-    const stmt = prepare(sql);
+    const { stmt, reader } = prepare(sql);
     const bind = {};
     for (const n of params) bind[`p${n}`] = toBindValue(values[n - 1]);
-    if (stmt.reader) {
+    if (reader) {
       const rows = (params.length ? stmt.all(bind) : stmt.all()).map(fromRow);
       return { rows, rowCount: rows.length };
     }
     const info = params.length ? stmt.run(bind) : stmt.run();
-    return { rows: [], rowCount: info.changes, lastInsertRowid: info.lastInsertRowid };
+    // DDL·BEGIN 등은 sqlite3_changes() 가 직전 DML 값으로 남아 있으므로 0
+    const isDml = /^\s*(?:WITH\b[\s\S]*?\b)?(?:INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql);
+    return { rows: [], rowCount: isDml ? Number(info.changes) : 0, lastInsertRowid: Number(info.lastInsertRowid) };
   } catch (error) {
     throw mapError(error, sql);
   }
@@ -193,7 +218,7 @@ const connect = () => {
     release: () => {
       if (released) return;
       released = true;
-      if (db.inTransaction) {
+      if (db.isTransaction) {
         try {
           db.exec('ROLLBACK');
         } catch {
@@ -208,8 +233,32 @@ const connect = () => {
 
 const query = async (text, values) => runQuery(text, values);
 
-/** 동기 트랜잭션 헬퍼 (새 코드용) */
-const transaction = (fn) => db.transaction(fn)();
+/** 동기 트랜잭션 헬퍼 (새 코드용) — 이미 트랜잭션 중이면 SAVEPOINT 로 중첩 */
+let savepointSeq = 0;
+const transaction = (fn) => {
+  if (db.isTransaction) {
+    const name = `sp_${(savepointSeq += 1)}`;
+    db.exec(`SAVEPOINT ${name}`);
+    try {
+      const result = fn();
+      db.exec(`RELEASE ${name}`);
+      return result;
+    } catch (error) {
+      db.exec(`ROLLBACK TO ${name}`);
+      db.exec(`RELEASE ${name}`);
+      throw error;
+    }
+  }
+  db.exec('BEGIN');
+  try {
+    const result = fn();
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    if (db.isTransaction) db.exec('ROLLBACK');
+    throw error;
+  }
+};
 
 const close = () => db.close();
 

@@ -28,7 +28,7 @@ const { appVersion } = require('../utils/appVersion');
 const OWNER_CACHE_TTL_MS = 60 * 1000;
 
 const getCentralApiUrl = () =>
-  String(process.env.CENTRAL_API_URL || 'https://plango.today').replace(/\/+$/, '');
+  String(process.env.CENTRAL_API_URL || 'https://auth.plango.today').replace(/\/+$/, '');
 
 const http = axios.create({ timeout: 15000 });
 http.interceptors.request.use((config) => {
@@ -150,7 +150,7 @@ const registerAgent = (token) =>
 
 let ownerCache = { at: 0, data: null };
 
-/** 주인 프로필·구독·텔레그램 상태 (60초 캐시). 실패 시 마지막 캐시 반환, 없으면 throw */
+/** 사용자 프로필·구독·텔레그램 상태 (60초 캐시). 실패 시 마지막 캐시 반환, 없으면 throw */
 const getOwnerStatus = async ({ force = false } = {}) => {
   if (!force && ownerCache.data && Date.now() - ownerCache.at < OWNER_CACHE_TTL_MS) {
     return ownerCache.data;

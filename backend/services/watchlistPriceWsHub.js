@@ -7,6 +7,7 @@
 
 const { WebSocketServer, WebSocket } = require('ws');
 const { verifyAgentToken } = require('../middleware/auth');
+const { isRegistered } = require('../utils/agentIdentity');
 const wsRegistry = require('./kiwoomUserWsRegistry');
 const { encodeUsRegCode } = require('./kiwoomRealtimeClient');
 const kiwoomAPI = require('./kiwoomApi');
@@ -41,9 +42,9 @@ function getUserLastPrices(userId) {
 
 /** V2 / 지표 WS 모니터 캐시 (있으면 시딩) */
 function getAutoTradingCachedPrice(userId, code6) {
-  for (const mod of ['./autoTradingWsMonitor_v2', './indicatorWsMonitor']) {
+  for (const load of [() => require('./autoTradingWsMonitor_v2'), () => require('./indicatorWsMonitor')]) {
     try {
-      const { getLastPrices } = require(mod);
+      const { getLastPrices } = load();
       const row = getLastPrices(userId)?.get(code6);
       if (row && Number(row.price) > 0) return row;
     } catch {
@@ -472,7 +473,13 @@ function getOrCreateSession(userId) {
 }
 
 async function authenticateWsToken(token) {
-  return verifyAgentToken(token);
+  const user = await verifyAgentToken(token);
+  if (!isRegistered()) {
+    const e = new Error('서버 등록 후 이용할 수 있습니다.');
+    e.code = 'AGENT_NOT_REGISTERED';
+    throw e;
+  }
+  return user;
 }
 
 /**
@@ -502,7 +509,9 @@ function attachWatchlistPriceWebSocket(server) {
       } catch {
         /* ignore */
       }
-      ws.close(4401, err.message);
+      if (err.code === 'ACCOUNT_BLOCKED') ws.close(4403, 'ACCOUNT_BLOCKED');
+      else if (err.code === 'AGENT_NOT_REGISTERED') ws.close(4409, 'AGENT_NOT_REGISTERED');
+      else ws.close(4401, err.message);
       return;
     }
 
@@ -544,8 +553,22 @@ function attachWatchlistPriceWebSocket(server) {
   return wss;
 }
 
+/** 모든 화면 WS 연결 종료 (close 이벤트에서 세션·키움 구독이 정리된다) */
+function disconnectAllClients(code, reason) {
+  for (const session of [...sessionsByUser.values()]) {
+    for (const ws of [...session.clients]) {
+      try {
+        ws.close(code, reason);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
 module.exports = {
   attachWatchlistPriceWebSocket,
+  disconnectAllClients,
   /** 조건검색 등 — 로그인된 관심종목 시세 키움 WS 재사용 */
   getConnectedRealtimeClient(userId) {
     const session =

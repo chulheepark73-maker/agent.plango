@@ -1,11 +1,15 @@
 /**
- * 중앙 서버 구독/주인 정보 동기화
+ * 중앙 서버 구독/사용자 정보 동기화
  * - 유료(Y) → 무료(N) 전환이 확인되면 자동매매 전부 OFF
  * - 마지막 구독 상태는 agent.json(lastSubscription)에 보관 → 재시작·중앙 장애 시에도 유지
+ * - 회원 정지·탈퇴(user.status !== 'active') → 계정 잠금, active 로 돌아오면 해제 (accountBlock)
+ * - 중앙이 에이전트 자격을 거부(401) → 키 삭제, 서버 미등록 잠금 (agentLock)
  * - 중앙 연결 실패는 상태 변경으로 보지 않음
  */
 const { getOwnerUserId, loadAgentIdentity, saveAgentIdentity, isRegistered } = require('./agentIdentity');
 const { normalizeSummary, disableTradingForUser } = require('./subscriptionStore');
+const { applyAccountBlock, clearAccountBlock, isAccountBlocked } = require('./accountBlock');
+const { handleAgentRevoked } = require('./agentLock');
 
 const SYNC_INTERVAL_MS = 10 * 60 * 1000;
 
@@ -19,6 +23,15 @@ const runSubscriptionSync = async (label = '') => {
   try {
     status = await getOwnerStatus({ force: true });
   } catch (error) {
+    if (error.status === 401) {
+      handleAgentRevoked({
+        code: error.data?.code,
+        reason: error.data?.revokedReason,
+        revokedAt: error.data?.revokedAt,
+        source: `sync${tag}`,
+      });
+      return { skipped: 'agent-revoked' };
+    }
     console.warn(`[구독동기화]${tag} 중앙 조회 실패: ${error.message}`);
     return { skipped: 'central-error' };
   }
@@ -32,14 +45,21 @@ const runSubscriptionSync = async (label = '') => {
         ownerEmail: status.user.email || null,
       });
     } catch (error) {
-      console.warn(`[구독동기화]${tag} 주인 정보 반영 실패: ${error.message}`);
+      console.warn(`[구독동기화]${tag} 사용자 정보 반영 실패: ${error.message}`);
     }
+  }
+
+  const userStatus = status?.user?.status;
+  if (userStatus && userStatus !== 'active') {
+    await applyAccountBlock({ status: userStatus, source: `sync${tag}` });
+  } else if (userStatus === 'active') {
+    await clearAccountBlock({ source: `sync${tag}` });
   }
 
   const sub = normalizeSummary(status?.subscription);
   const prev = loadAgentIdentity().lastSubscription;
   let tradingOff = null;
-  if (prev?.subscription === 'Y' && sub.subscription === 'N') {
+  if (!isAccountBlocked() && prev?.subscription === 'Y' && sub.subscription === 'N') {
     tradingOff = await disableTradingForUser(ownerId);
     console.log(
       `[구독동기화]${tag} 구독 종료 → 자동매매 OFF user=${ownerId} ` +
@@ -47,7 +67,7 @@ const runSubscriptionSync = async (label = '') => {
     );
   }
   saveAgentIdentity({ lastSubscription: sub, lastSyncedAt: new Date().toISOString() });
-  return { subscription: sub.subscription, tradingOff };
+  return { subscription: sub.subscription, tradingOff, accountBlocked: isAccountBlocked() };
 };
 
 function startScheduler() {

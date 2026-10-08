@@ -150,7 +150,7 @@ const calcInfiniteSeedRemaining = (plan) => {
     if (!ord || String(ord.side).toUpperCase() !== 'BUY') continue;
     const q = Number(f.fillQty) || 0;
     const p = Number(f.fillPrice) || 0;
-    if (q > 0 && p > 0) spent += p * q;
+    if (q > 0 && p > 0) spent += Number(f.fillAmount) > 0 ? Number(f.fillAmount) : p * q;
   }
   if (!(spent > 0)) {
     for (const o of orders) {
@@ -218,8 +218,7 @@ const HOLDINGS_DASH = {
 
 const HOLDINGS_PAGE_SIZE = 3;
 const ORDER_PREVIEW_COUNT = 4;
-const ORDER_TEXT_COLOR = '#f0e0b0';
-
+const TODAY_SELL_PREVIEW_COUNT = 7;
 const orderItemKey = (item) =>
   `${item.source || 'v1'}_${item.planId || 0}_${item.stockCode}_${item.stage}_${item.orderNo}`;
 
@@ -951,7 +950,9 @@ const Dashboard = () => {
     } catch (error) {
       console.error('[대시보드] Dashboard Snapshot 조회 실패:', error);
       let message = '대시보드 데이터를 불러오는 중 오류가 발생했습니다.';
-      if (error.response?.status === 401) {
+      if (error.response?.data?.code === 'AGENT_NOT_REGISTERED') {
+        message = null;
+      } else if (error.response?.status === 401) {
         message = '로그인이 필요합니다.';
       } else if (error.response?.data?.error) {
         message = error.response.data.error;
@@ -1280,7 +1281,7 @@ const Dashboard = () => {
   const renderOrderItem = (item, moreBadge = null) => {
     const isUs = isUsHoldingCode(item.stockCode, item.stockMarket);
     const displayName = resolveStockDisplayName(item.stockCode, stockNameMap, item.stockName);
-    const orderNoColor = ORDER_TEXT_COLOR;
+    const orderNoColor = isUs ? '#C9A227' : HOLDINGS_DASH.muted;
     const statusColor = orderNoColor;
     return (
       <Box key={orderItemKey(item)} sx={{ py: 0.5 }}>
@@ -1321,7 +1322,11 @@ const Dashboard = () => {
     todayNow.getDate()
   ).padStart(2, '0')}일 ${['일', '월', '화', '수', '목', '금', '토'][todayNow.getDay()]}요일 매도완료`;
   const todayTradeHistory = useMemo(
-    () => tradeHistory.filter((item) => String(item.createdAt || '').slice(0, 10) === todayKey),
+    () =>
+      tradeHistory
+        .filter((item) => String(item.createdAt || '').slice(0, 10) === todayKey)
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .slice(0, TODAY_SELL_PREVIEW_COUNT),
     [tradeHistory, todayKey]
   );
 
@@ -1996,8 +2001,9 @@ const Dashboard = () => {
                               ml: 'auto',
                               height: 20,
                               fontSize: '0.7rem',
-                              color: alpha(ORDER_TEXT_COLOR, 0.7),
-                              borderColor: alpha(ORDER_TEXT_COLOR, 0.5),
+                              color: HOLDINGS_DASH.muted,
+                              borderColor: HOLDINGS_DASH.border,
+                              opacity: 0.8,
                               cursor: 'pointer',
                             }}
                           />
@@ -2315,15 +2321,16 @@ const Dashboard = () => {
                     const q = Number(f.fillQty) || 0;
                     if (q <= 0) continue;
                     const p = Number(f.fillPrice) || 0;
+                    const amt = Number(f.fillAmount) > 0 ? Number(f.fillAmount) : p * q;
                     const at = f.filledAt || f.createdAt || '';
                     const key = Number(f.orderId);
                     const prev = buyByOrder.get(key);
                     if (prev) {
                       prev.qty += q;
-                      prev.amt += p * q;
+                      prev.amt += amt;
                       if (at && (!prev.sortKey || String(at) < String(prev.sortKey))) prev.sortKey = at;
                     } else {
-                      buyByOrder.set(key, { id: key, qty: q, amt: p * q, sortKey: at });
+                      buyByOrder.set(key, { id: key, qty: q, amt, sortKey: at });
                     }
                   }
                   const buyRows = [...buyByOrder.values()]

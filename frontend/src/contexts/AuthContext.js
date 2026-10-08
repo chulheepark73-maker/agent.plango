@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import apiClient from '../utils/axios';
+import apiClient, { AGENT_STATUS_CHANGED_EVENT } from '../utils/axios';
 
 const AuthContext = createContext();
 
@@ -33,6 +33,26 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
+  /** { registered, agentRevoked, accountBlocked } — null 이면 아직 모름 */
+  const [agentStatus, setAgentStatus] = useState(null);
+
+  const refreshAgentStatus = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get('/auth/agent-status');
+      setAgentStatus(data);
+      return data;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const onChanged = () => {
+      refreshAgentStatus();
+    };
+    window.addEventListener(AGENT_STATUS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(AGENT_STATUS_CHANGED_EVENT, onChanged);
+  }, [refreshAgentStatus]);
 
   const logout = useCallback(async () => {
     try {
@@ -73,10 +93,11 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (token) {
       fetchUser();
+      refreshAgentStatus();
     } else {
       setLoading(false);
     }
-  }, [token, fetchUser]);
+  }, [token, fetchUser, refreshAgentStatus]);
 
   const login = async (email, password) => {
     try {
@@ -117,6 +138,9 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     fetchUser,
+    agentStatus,
+    agentRegistered: agentStatus ? !!agentStatus.registered : null,
+    refreshAgentStatus,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,15 +1,17 @@
 /**
- * 에이전트 주인·서버 등록 정보 (backend/data/agent.json)
- * - 주인: 첫 로그인 계정 { ownerUserId, ownerUsername, ownerEmail, ownerSince }
+ * 에이전트 사용자·서버 등록 정보 (backend/data/agent.json)
+ * - 사용자: 첫 로그인 계정 { ownerUserId, ownerUsername, ownerEmail, ownerSince }
  * - 서버 등록: '서버 등록' 메뉴에서 중앙 발급 { agentId, agentSecret, registeredAt }
- * - { lastSubscription, lastSyncedAt }
+ * - 등록 해제: 중앙이 폐기·인증 실패를 알리면 키를 지우고 { agentRevoked: { at, code, reason, message } }
+ * - { lastSubscription, lastSyncedAt, accountBlocked }
  */
 const fs = require('fs');
 const path = require('path');
+const { DATA_DIR } = require('./appPaths');
 
 const AGENT_FILE = process.env.AGENT_DATA_FILE
   ? path.resolve(process.env.AGENT_DATA_FILE)
-  : path.join(__dirname, '..', 'data', 'agent.json');
+  : path.join(DATA_DIR, 'agent.json');
 
 let cache = null;
 

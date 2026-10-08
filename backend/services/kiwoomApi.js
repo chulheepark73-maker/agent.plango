@@ -2,6 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { getKiwoomRestBase, getKiwoomTokenUrl } = require('../utils/kiwoomMode');
+const { DATA_DIR } = require('../utils/appPaths');
 
 /** 모의투자 서버는 초당 1건만 허용(1700) — 모의 서버로 가는 요청만 순서대로 간격을 둔다 */
 const MOCK_REST_HOST = 'mockapi.kiwoom.com';
@@ -1710,7 +1711,7 @@ class KiwoomAPI {
       console.log(`[키움증권 API] 거래량 상위 ${limit}위 종목 조회 완료: ${topStocks.length}건`);
       
       // 종목코드와 종목명을 파일로 저장
-      const filePath = path.join(__dirname, '..', 'data', 'top_volume_stocks.json');
+      const filePath = path.join(DATA_DIR, 'top_volume_stocks.json');
       const fileDir = path.dirname(filePath);
       
       // 디렉토리가 없으면 생성
@@ -1849,7 +1850,7 @@ class KiwoomAPI {
       console.log(`[키움증권 API] 거래량 상위 ${limit}위 종목 중 시가총액 3조 이상 필터링 완료: ${filteredStocks.length}건`);
       
       // 필터링된 결과를 파일에 저장
-      const resultFilePath = path.join(__dirname, '..', 'data', 'filtered_stocks.json');
+      const resultFilePath = path.join(DATA_DIR, 'filtered_stocks.json');
       const resultFileDir = path.dirname(resultFilePath);
       
       // 디렉토리가 없으면 생성

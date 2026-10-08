@@ -1,10 +1,11 @@
 /**
- * 에이전트 주인(1명) 사용자 정보
+ * 에이전트 사용자(1명) 정보
  * - 회원 원본은 중앙 서버. 로컬 users 행은 FK(trading_plans 등) 유지를 위한 미러.
- * - getUserById / getAllUsers 는 페어링된 주인만 반환.
+ * - getUserById / getAllUsers 는 페어링된 사용자만 반환.
  */
 const pool = require('./tradingDb');
 const { getOwnerUserId, isOwner } = require('./agentIdentity');
+const { isAgentLocked } = require('./agentLock');
 
 const CENTRAL_PASSWORD_PLACEHOLDER = '!central-managed';
 
@@ -56,10 +57,10 @@ const getUserById = async (userId) => {
   }
 };
 
-/** 스케줄러/모니터용: 이 에이전트의 주인만 */
+/** 스케줄러/모니터용: 이 에이전트의 사용자만 (계정 정지·서버 미등록이면 없음) */
 const getAllUsers = async () => {
   const ownerId = getOwnerUserId();
-  if (!ownerId) return [];
+  if (!ownerId || isAgentLocked()) return [];
   const owner = await getUserById(ownerId);
   return owner ? [owner] : [];
 };

@@ -114,10 +114,11 @@ const avgCostFromPlanFills = (plan, opts = {}) => {
     if (!ord) continue;
     const q = toNum(f.fillQty, 0) || 0;
     const p = toNum(f.fillPrice, 0) || 0;
+    const amount = toNum(f.fillAmount, 0) || 0;
     const side = String(ord.side).toUpperCase();
     if (side === 'BUY' && q > 0 && p > 0) {
       buyQty += q;
-      buyAmt += p * q;
+      buyAmt += amount > 0 ? amount : p * q;
     } else if (side === 'SELL' && q > 0) {
       sellQty += q;
     }

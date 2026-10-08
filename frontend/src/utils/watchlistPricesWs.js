@@ -81,7 +81,8 @@ export function connectWatchlistPricesWs({ token, onMessage, onOpen, onClose, on
     socket.onclose = (ev) => {
       if (onClose) onClose(ev);
       socket = null;
-      if (closedByUser) return;
+      // 4403: 계정 정지, 4409: 서버 미등록 — 재연결해도 거부된다
+      if (closedByUser || ev?.code === 4403 || ev?.code === 4409) return;
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
         connect();

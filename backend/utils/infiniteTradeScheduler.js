@@ -78,9 +78,12 @@ const resolveMarket = (plan) => {
 
 const getPriceForPlan = async (userId, stockCode, stockMarket) => {
   const code = normalizeAutoCode(stockCode, stockMarket);
-  for (const mod of ['../services/autoTradingWsMonitor_v2', '../services/indicatorWsMonitor']) {
+  for (const load of [
+    () => require('../services/autoTradingWsMonitor_v2'),
+    () => require('../services/indicatorWsMonitor'),
+  ]) {
     try {
-      const { getLastPrices } = require(mod);
+      const { getLastPrices } = load();
       if (typeof getLastPrices !== 'function') continue;
       const map = getLastPrices(userId);
       const row = map?.get(code) || map?.get(String(code).toUpperCase());

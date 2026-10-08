@@ -148,15 +148,16 @@ const buildHoldingsFromTradingV2 = async (userId) => {
         const q = Math.floor(Number(f.fillQty) || 0);
         const p = Number(f.fillPrice) || 0;
         if (!(q > 0) || !(p > 0)) continue;
+        const amt = Number(f.fillAmount) > 0 ? Number(f.fillAmount) : p * q;
         const at = f.filledAt || f.createdAt || null;
         const key = Number(f.orderId);
         const prev = buyByOrder.get(key);
         if (prev) {
           prev.qty += q;
-          prev.amt += p * q;
+          prev.amt += amt;
           if (at && (!prev.at || new Date(at) < new Date(prev.at))) prev.at = at;
         } else {
-          buyByOrder.set(key, { qty: q, amt: p * q, at, orderNo: ord.brokerOrderNo || null });
+          buyByOrder.set(key, { qty: q, amt, at, orderNo: ord.brokerOrderNo || null });
         }
       }
       const buyFills = [...buyByOrder.values()]
@@ -751,7 +752,8 @@ router.post('/trailing-log-export', authenticateToken, async (req, res) => {
     lines.sort();
 
     const fileName = `${spec.title}_${ymd}_${pad(now.getHours())}_${pad(now.getMinutes())}.txt`;
-    const outPath = path.join(__dirname, '../data', fileName);
+    const { DATA_DIR } = require('../utils/appPaths');
+    const outPath = path.join(DATA_DIR, fileName);
     const header = `${spec.title} — ${ymd} (추출 ${now.toLocaleString('ko-KR')}, ${lines.length}건)\n\n`;
     const content = header + lines.join('\n') + (lines.length ? '\n' : '');
     await fs.promises.writeFile(outPath, content, 'utf8');

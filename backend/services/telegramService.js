@@ -6,7 +6,7 @@ const { isOwner } = require('../utils/agentIdentity');
 
 async function sendTelegramToUserById(userId, text) {
   if (!isOwner(userId)) {
-    console.warn('[텔레그램] 전송 스킵: 에이전트 주인이 아님', { userId: String(userId) });
+    console.warn('[텔레그램] 전송 스킵: 에이전트 사용자가 아님', { userId: String(userId) });
     return;
   }
   try {

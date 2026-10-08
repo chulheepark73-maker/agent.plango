@@ -19,8 +19,10 @@ import DnsIcon from '@mui/icons-material/Dns';
 import apiClient from '../utils/axios';
 import PageFrame from '../components/PageFrame';
 import { formatKstDateTime } from '../utils/formatUtils';
+import { useAuth } from '../contexts/AuthContext';
 
 const ServerRegistration = () => {
+  const { refreshAgentStatus } = useAuth();
   const [status, setStatus] = useState(null);
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -48,7 +50,7 @@ const ServerRegistration = () => {
       const { data } = await apiClient.post('/auth/server-registration', { password });
       setPassword('');
       setMessage({ type: 'success', text: data.message || '서버 등록이 완료되었습니다.' });
-      await fetchStatus();
+      await Promise.all([fetchStatus(), refreshAgentStatus()]);
     } catch (error) {
       setMessage({ type: 'error', text: error.response?.data?.error || '서버 등록 중 오류가 발생했습니다.' });
     } finally {
@@ -99,10 +101,16 @@ const ServerRegistration = () => {
               <Typography variant="body2" color="text.secondary">마지막 동기화</Typography>
               <Typography variant="body2">{formatKstDateTime(status.lastSyncedAt)}</Typography>
             </Box>
+          ) : status?.agentRevoked ? (
+            <Alert severity="warning">
+              {status.agentRevoked.message} ({formatKstDateTime(status.agentRevoked.at)})
+              <br />
+              다시 등록하면 일시정지하지 않은 자동매매가 바로 재개됩니다.
+            </Alert>
           ) : (
             <Typography variant="body2" color="text.secondary">
-              이 서버는 아직 PlanGo 인증서비스에 등록되지 않았습니다. 서버를 등록해야 모든 기능을
-              정상적으로 이용 가능합니다.
+              이 서버는 아직 PlanGo 인증서비스에 등록되지 않았습니다. 서버를 등록해야 자동매매와 모든 기능을
+              이용할 수 있습니다.
             </Typography>
           )}
         </CardContent>

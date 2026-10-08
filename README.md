@@ -38,7 +38,7 @@ npm run dev
 ```
 PORT=3001
 # 중앙 서버 (Auth Server). 로컬: http://localhost:3011
-CENTRAL_API_URL=https://plango.today
+CENTRAL_API_URL=https://auth.plango.today
 ```
 
 키움 App Key/Secret 은 환경설정 화면에서 입력하며, 텔레그램 봇 설정은 Auth Server 에만 둡니다.
@@ -48,6 +48,26 @@ CENTRAL_API_URL=https://plango.today
 # Auth 웹 (계정 만들기·비밀번호 찾기). 로컬: http://localhost:3010
 REACT_APP_AUTH_WEB_URL=https://auth.plango.today
 ```
+
+## 실행파일 배포 (Node SEA)
+
+우분투 빌드 서버(Node 25.5+)에서 소스를 받은 뒤:
+
+```bash
+bash scripts/build-release.sh
+```
+
+`release/plango-agent-<버전>-linux-<arch>.tar.gz` 가 만들어진다. 고객 서버에서는 Node 설치 없이:
+
+```bash
+tar -xzf plango-agent-*.tar.gz && cd plango-agent
+cp .env.example .env
+./plango-agent
+```
+
+- 실행파일 하나가 API 와 프론트엔드(`build/`)를 같은 포트(`PORT`, 기본 3001)로 제공한다.
+- `data/`(DB·agent.json), `log/` 는 실행파일 옆에 생긴다. 업데이트 시 실행파일과 `build/` 만 교체한다.
+- 실행파일은 빌드한 OS/CPU 전용이다 (리눅스 x64 에서 빌드 → 리눅스 x64 고객 서버).
 
 ## 프로젝트 구조
 
@@ -110,7 +130,7 @@ kiwoom-auto-trading/
 
 ## 향후 개선 사항
 
-- [ 0 ] 데이터베이스 연동 (SQLite, better-sqlite3)
+- [ 0 ] 데이터베이스 연동 (SQLite, Node 내장 node:sqlite — Node 22.5+ 필요)
 - [ ] 실시간 시세 웹소켓 연동
 - [ ] 자동매매 전략 실행 엔진 구현
 - [ ] 백테스팅 기능

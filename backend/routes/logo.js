@@ -2,10 +2,11 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { DATA_DIR } = require('../utils/appPaths');
 
 const router = express.Router();
 
-const CACHE_DIR = path.join(__dirname, '..', 'data', 'logos');
+const CACHE_DIR = path.join(DATA_DIR, 'logos');
 const MISS_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
 const inflight = new Map();
 

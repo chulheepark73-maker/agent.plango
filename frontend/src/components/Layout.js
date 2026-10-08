@@ -17,6 +17,7 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  Alert,
   useTheme,
 } from '@mui/material';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -101,15 +102,34 @@ const sideMenuGroups = [
 const SIDEBAR_WIDTH = 180;
 const APPBAR_HEIGHT = 64;
 
+/** 서버 미등록 상태에서도 열리는 화면 (대시보드는 빈 상태로 보인다) */
+const UNREGISTERED_OPEN_PATHS = [
+  '/dashboard',
+  '/server-registration',
+  '/subscription-plans',
+  '/profile',
+  '/change-password',
+];
+const isOpenWhenUnregistered = (path) => UNREGISTERED_OPEN_PATHS.includes(path);
+
 const Layout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
-  const { logout } = useAuth();
+  const { logout, agentRegistered, agentStatus } = useAuth();
   const { setThemeMode } = useThemeMode();
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [appVersion, setAppVersion] = useState('');
+  const unregistered = agentRegistered === false;
+  const isLocked = useCallback(
+    (path) => unregistered && !isOpenWhenUnregistered(path),
+    [unregistered]
+  );
+
+  useEffect(() => {
+    if (isLocked(location.pathname)) navigate('/server-registration', { replace: true });
+  }, [isLocked, location.pathname, navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -165,12 +185,16 @@ const Layout = () => {
               ? item.iconColorDark
               : item.iconColorLight;
             return (
-              <Tooltip key={item.path} title={item.tooltip} arrow>
+              <Tooltip
+                key={item.path}
+                title={isLocked(item.path) ? `${item.tooltip} (서버 등록 후 이용)` : item.tooltip}
+                arrow
+              >
                 {/* disabled 버튼은 이벤트를 발생시키지 않아 Tooltip에 wrapper가 필요 */}
                 <span>
                   <IconButton
                     color="inherit"
-                    disabled={!!item.disabled}
+                    disabled={!!item.disabled || isLocked(item.path)}
                     onClick={() => handleMenuClick(item.path)}
                     sx={{
                       backgroundColor: active ? 'action.selected' : 'transparent',
@@ -289,6 +313,7 @@ const Layout = () => {
               <ListItemButton
                 key={item.path}
                 selected={isActive(item.path)}
+                disabled={isLocked(item.path)}
                 onClick={() => handleMenuClick(item.path)}
                 sx={{
                   mx: 1,
@@ -322,6 +347,21 @@ const Layout = () => {
         }}
       >
         <Box sx={{ flex: 1 }}>
+          {unregistered && location.pathname !== '/server-registration' && (
+            <Alert
+              severity="warning"
+              sx={{ mb: 2 }}
+              action={
+                <Button color="inherit" size="small" onClick={() => navigate('/server-registration')}>
+                  서버 등록
+                </Button>
+              }
+            >
+              {agentStatus?.agentRevoked?.message
+                ? `${agentStatus.agentRevoked.message} 서버 등록 후 이용할 수 있습니다.`
+                : '이 서버는 아직 등록되지 않았습니다. 서버 등록 후 자동매매와 모든 기능을 이용할 수 있습니다.'}
+            </Alert>
+          )}
           <Outlet />
         </Box>
         <Footer />

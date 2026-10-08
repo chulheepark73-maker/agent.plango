@@ -1,7 +1,7 @@
 -- PlanGo Agent 로컬 DB (SQLite) 스키마
 -- 시각은 ISO-8601 UTC 문자열, BOOLEAN 은 0/1, JSON 은 문자열로 저장한다.
 
--- 에이전트 주인 계정 사본 (원본·인증은 중앙 서버)
+-- 에이전트 사용자 계정 사본 (원본·인증은 중앙 서버)
 CREATE TABLE IF NOT EXISTS "users" (
   "id" TEXT PRIMARY KEY,
   "email" TEXT NOT NULL,

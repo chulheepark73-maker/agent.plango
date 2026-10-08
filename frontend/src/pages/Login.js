@@ -176,9 +176,6 @@ const Login = () => {
               >
                 계정 만들기
               </Link>
-              <Link href={authUrl('/login')} target="_blank" rel="noopener noreferrer" sx={linkSx}>
-                비밀번호를 잊어버리셨나요?
-              </Link>
             </Box>
           </Box>
         </Paper>

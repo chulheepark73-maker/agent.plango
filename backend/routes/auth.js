@@ -16,6 +16,8 @@ const {
   isOwner,
 } = require('../utils/agentIdentity');
 const { upsertOwnerUser, getUserById } = require('../utils/userStore');
+const { applyAccountBlock, clearAccountBlock, getAccountBlock } = require('../utils/accountBlock');
+const { getAgentRevoked, onAgentRegistered } = require('../utils/agentLock');
 const { getSubscriptionSummaryForUser } = require('../utils/subscriptionStore');
 const { logLogin } = require('../utils/logger');
 
@@ -48,14 +50,23 @@ const maskEmail = (email) => {
   return `${id.slice(0, 2)}${'*'.repeat(Math.max(1, id.length - 2))}@${domain}`;
 };
 
-/** 로그인 화면용: 주인·서버 등록 여부 (인증 불필요) */
+/** 등록 해제 안내 (화면 표시용, 비밀값 제외) */
+const revokedInfo = () => {
+  const r = getAgentRevoked();
+  return r ? { at: r.at, code: r.code, message: r.message } : null;
+};
+
+/** 로그인 화면용: 사용자·서버 등록 여부 (인증 불필요) */
 router.get('/agent-status', (req, res) => {
   const a = loadAgentIdentity();
+  const block = getAccountBlock();
   res.json({
     hasOwner: hasOwner(),
     registered: isRegistered(),
     ownerEmail: maskEmail(a.ownerEmail),
     registeredAt: a.registeredAt || a.pairedAt || null,
+    accountBlocked: block ? { status: block.status, message: block.message } : null,
+    agentRevoked: revokedInfo(),
   });
 });
 
@@ -68,6 +79,7 @@ router.get('/server-registration', authenticateToken, (req, res) => {
     registeredAt: a.registeredAt || a.pairedAt || null,
     lastSyncedAt: a.lastSyncedAt || null,
     centralUrl: central.getCentralApiUrl(),
+    agentRevoked: revokedInfo(),
   });
 });
 
@@ -90,6 +102,7 @@ router.post('/server-registration', authenticateToken, async (req, res) => {
     const registeredAt = new Date().toISOString();
     saveAgentIdentity({ agentId: reg.agentId, agentSecret: reg.agentSecret, registeredAt });
     central.invalidateOwnerStatus();
+    onAgentRegistered();
     console.log(`[에이전트] 서버 등록 완료 owner=${req.user.userId} agentId=${reg.agentId}`);
 
     let subscription = null;
@@ -133,6 +146,10 @@ router.post(
       data = await central.login({ email, password, client });
     } catch (error) {
       logLogin('LOGIN', null, email, clientIp, false, error.message, client);
+      const ownerEmail = String(loadAgentIdentity().ownerEmail || '').toLowerCase();
+      if (error.data?.code === 'ACCOUNT_BLOCKED' && ownerEmail && ownerEmail === String(email).toLowerCase()) {
+        await applyAccountBlock({ message: error.data.error, source: 'login' });
+      }
       return res
         .status(error.network ? 503 : error.status)
         .json(
@@ -147,7 +164,7 @@ router.post(
       const userId = claims.userId;
       const profile = { ...(data.user || {}), id: userId };
 
-      // 첫 로그인 계정을 주인으로만 정한다. 중앙 에이전트 키 발급은 '서버 등록' 메뉴에서.
+      // 첫 로그인 계정을 사용자로만 정한다. 중앙 에이전트 키 발급은 '서버 등록' 메뉴에서.
       if (!hasOwner()) {
         saveAgentIdentity({
           ownerUserId: userId,
@@ -155,10 +172,10 @@ router.post(
           ownerEmail: profile.email || email,
           ownerSince: new Date().toISOString(),
         });
-        console.log(`[에이전트] 주인 지정 owner=${userId} (서버 등록 전)`);
+        console.log(`[에이전트] 사용자 지정 owner=${userId} (서버 등록 전)`);
       } else if (!isOwner(userId)) {
         central.logout(data.token).catch(() => {});
-        logLogin('LOGIN', userId, email, clientIp, false, '에이전트 주인 아님', client);
+        logLogin('LOGIN', userId, email, clientIp, false, '에이전트 사용자 아님', client);
         return res.status(403).json({
           error: '이 에이전트는 다른 계정에 등록되어 있습니다.',
           code: 'AGENT_OWNER_MISMATCH',
@@ -172,6 +189,7 @@ router.post(
         phoneNumber: profile.phoneNumber,
       });
       central.invalidateOwnerStatus();
+      await clearAccountBlock({ source: 'login' });
 
       logLogin('LOGIN', userId, profile.username || email, clientIp, true, '', client);
       res.json({

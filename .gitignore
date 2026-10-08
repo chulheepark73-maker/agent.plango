@@ -15,6 +15,10 @@ backend/data/
 # Frontend build output
 frontend/build/
 
+# 실행파일 빌드 산출물
+backend/dist/
+release/
+
 # Local documents / notes
 *.docx
 

@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
 const { getPublicKey } = require('../services/centralClient');
-const { hasOwner, isOwner } = require('../utils/agentIdentity');
+const { hasOwner, isOwner, isRegistered } = require('../utils/agentIdentity');
+const { isAccountBlocked, accountBlockMessage } = require('../utils/accountBlock');
+const { getAgentRevoked, NOT_REGISTERED_MESSAGE } = require('../utils/agentLock');
 
 const authError = (status, message, code) => {
   const e = new Error(message);
@@ -16,7 +18,7 @@ const verifyWithKey = (token, key) =>
     jwt.verify(token, key, options, (err, decoded) => (err ? reject(err) : resolve(decoded)));
   });
 
-/** 중앙 서버가 RS256 으로 서명한 토큰 검증 (서명만, 주인 확인 제외) */
+/** 중앙 서버가 RS256 으로 서명한 토큰 검증 (서명만, 사용자 확인 제외) */
 const verifyCentralSignature = async (token) => {
   if (!token) throw authError(401, '인증 토큰이 필요합니다.');
   let key;
@@ -58,17 +60,20 @@ const revokeToken = (token, claims) => {
   revokedTokens.set(token, claims?.exp ? claims.exp * 1000 : now + 24 * 3600 * 1000);
 };
 
-/** 서명 검증 + 이 에이전트 주인인지 확인 */
+/** 서명 검증 + 이 에이전트 사용자인지 확인 */
 const verifyAgentToken = async (token) => {
   if (token && revokedTokens.has(token)) {
     throw authError(401, '로그아웃된 토큰입니다. 다시 로그인해주세요.', 'SESSION_EXPIRED');
   }
   const user = await verifyCentralSignature(token);
   if (!hasOwner()) {
-    throw authError(401, '에이전트 주인이 정해지지 않았습니다. 다시 로그인해주세요.', 'AGENT_NO_OWNER');
+    throw authError(401, '에이전트 사용자가 정해지지 않았습니다. 다시 로그인해주세요.', 'AGENT_NO_OWNER');
   }
   if (!isOwner(user.userId)) {
     throw authError(403, '이 에이전트에 등록된 계정이 아닙니다.', 'AGENT_OWNER_MISMATCH');
+  }
+  if (isAccountBlocked()) {
+    throw authError(403, accountBlockMessage(), 'ACCOUNT_BLOCKED');
   }
   return user;
 };
@@ -85,4 +90,30 @@ const authenticateToken = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticateToken, verifyAgentToken, verifyCentralSignature, revokeToken };
+/** 서버 미등록 상태에서도 열어 두는 API (app.use('/api') 기준 경로) */
+const UNREGISTERED_ALLOWED = [
+  /^\/health$/,
+  /^\/auth(\/|$)/,
+  /^\/subscription(\/|$)/,
+  /^\/settings\/version$/,
+  /^\/settings\/user-settings$/,
+];
+
+/** 서버 미등록이면 등록·계정·요금제 외 API 를 막는다 */
+const requireRegisteredAgent = (req, res, next) => {
+  if (isRegistered() || UNREGISTERED_ALLOWED.some((re) => re.test(req.path))) return next();
+  const revoked = getAgentRevoked();
+  res.status(403).json({
+    error: revoked?.message || NOT_REGISTERED_MESSAGE,
+    code: 'AGENT_NOT_REGISTERED',
+    revoked: !!revoked,
+  });
+};
+
+module.exports = {
+  authenticateToken,
+  verifyAgentToken,
+  verifyCentralSignature,
+  revokeToken,
+  requireRegisteredAgent,
+};

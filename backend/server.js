@@ -1,7 +1,10 @@
 // 로거 초기화 (가장 먼저 로드)
 require('./utils/logger');
-require('dotenv').config();
+const { ENV_FILE, FRONTEND_BUILD_DIR } = require('./utils/appPaths');
+require('dotenv').config({ path: ENV_FILE });
 
+const fs = require('fs');
+const path = require('path');
 const http = require('http');
 const express = require('express');
 const cors = require('cors');
@@ -20,16 +23,16 @@ const { startIndicatorWsMonitor } = require('./services/indicatorWsMonitor');
 const { startIndicatorSellMonitor } = require('./services/indicatorSellMonitor');
 const { startInfiniteTradeScheduler } = require('./utils/infiniteTradeScheduler');
 const { ensureTradingV2Tables } = require('./utils/tradingV2Store');
+const { requireRegisteredAgent } = require('./middleware/auth');
 
 if (!process.env.CENTRAL_API_URL) {
-  console.warn('⚠️  CENTRAL_API_URL 미설정 — 기본값 https://plango.today 사용');
+  console.warn('⚠️  CENTRAL_API_URL 미설정 — 기본값 https://auth.plango.today 사용');
 }
 
 const app = express();
 const server = http.createServer(app);
-// 백엔드 서버는 항상 포트 3001에서 실행 (프론트엔드는 3000)
-// 포트 충돌 방지를 위해 명시적으로 3001 사용
-const PORT = 3001;
+// 개발 시 프론트 dev 서버(3000)가 3001 을 가정하므로 기본값은 3001
+const PORT = Number(process.env.PORT) || 3001;
 
 // 프록시를 통한 실제 클라이언트 IP 추출을 위한 설정
 // Nginx, 로드밸런서, 리버스 프록시 등을 통해 접근할 때 필요
@@ -41,6 +44,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
+app.use('/api', requireRegisteredAgent);
 app.use('/api/auth', authRoutes);
 app.use('/api/account', accountRoutes);
 app.use('/api/market', marketRoutes);
@@ -56,6 +60,22 @@ app.use('/api/subscription', require('./routes/subscription'));
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: '키움증권 자동매매 서버가 정상 작동 중입니다.' });
 });
+
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Not Found' });
+});
+
+// 프론트엔드 빌드 (개발 시에는 CRA dev 서버가 따로 띄우므로 build 가 없을 수 있다)
+const FRONTEND_INDEX = path.join(FRONTEND_BUILD_DIR, 'index.html');
+if (fs.existsSync(FRONTEND_INDEX)) {
+  app.use(express.static(FRONTEND_BUILD_DIR, { index: false }));
+  app.get('*', (req, res) => {
+    res.sendFile(FRONTEND_INDEX);
+  });
+  console.log(`[Server] 프론트엔드 제공: ${FRONTEND_BUILD_DIR}`);
+} else {
+  console.warn(`[Server] 프론트엔드 build 없음 — API 만 제공 (${FRONTEND_BUILD_DIR})`);
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {

@@ -1,7 +1,7 @@
 /**
  * 키움 실전투자 / 모의투자 선택 (broker_accounts.trading_mode)
  *
- * 에이전트는 주인 1명이므로 모드는 에이전트 전체에 하나다.
+ * 에이전트는 사용자 1명이므로 모드는 에이전트 전체에 하나다.
  * REST·토큰·WebSocket 주소는 모두 여기서 현재 모드에 맞춰 고른다.
  */
 const { db } = require('./tradingDb');

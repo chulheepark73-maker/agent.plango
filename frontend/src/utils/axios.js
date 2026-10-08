@@ -32,6 +32,8 @@ const getApiUrl = () => {
 
 export const API_URL = getApiUrl();
 
+export const AGENT_STATUS_CHANGED_EVENT = 'plango:agent-status-changed';
+
 // axios instance 생성
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -67,10 +69,17 @@ apiClient.interceptors.response.use(
     const errorData = error.response?.data;
     const isOwnerMismatch =
       error.response?.status === 403 && errorData?.code === 'AGENT_OWNER_MISMATCH';
+    const isAccountBlocked =
+      error.response?.status === 403 && errorData?.code === 'ACCOUNT_BLOCKED';
 
-    // 401 Unauthorized / 이 에이전트 주인이 아닌 토큰
-    if (error.response?.status === 401 || isOwnerMismatch) {
-      if (errorData?.code === 'SESSION_EXPIRED' || isOwnerMismatch) {
+    // 서버 미등록·등록 해제 — 로그인은 유지하고 화면이 등록 상태를 다시 읽게 한다
+    if (error.response?.status === 403 && errorData?.code === 'AGENT_NOT_REGISTERED') {
+      window.dispatchEvent(new Event(AGENT_STATUS_CHANGED_EVENT));
+    }
+
+    // 401 Unauthorized / 이 에이전트 사용자가 아닌 토큰 / 계정 정지
+    if (error.response?.status === 401 || isOwnerMismatch || isAccountBlocked) {
+      if (errorData?.code === 'SESSION_EXPIRED' || isOwnerMismatch || isAccountBlocked) {
         localStorage.removeItem('token');
         if (window.location.pathname !== '/login') {
           alert(errorData?.error || '로그인이 만료되었습니다. 다시 로그인해주세요.');

@@ -1,14 +1,17 @@
 const cron = require('node-cron');
 const { runEodUnfilledIndicatorSellsForAllUsers } = require('../services/indicatorSellMonitor');
+const { isAgentLocked } = require('./agentLock');
 
 /**
  * 지표기반매매 — 장마감 후 미체결 매도 → reject + open 복귀
  * KRX 15:35 / NXT·잔여 20:05 KST (평일)
+ * 계정 정지·서버 미등록 중에는 키움 미체결 주문을 건드리지 않는다.
  */
 function startScheduler() {
   cron.schedule(
     '35 15 * * 1-5',
     async () => {
+      if (isAgentLocked()) return;
       try {
         await runEodUnfilledIndicatorSellsForAllUsers('KRX');
       } catch (error) {
@@ -21,6 +24,7 @@ function startScheduler() {
   cron.schedule(
     '5 20 * * 1-5',
     async () => {
+      if (isAgentLocked()) return;
       try {
         // NXT 마감 + KRX에서 놓친 selling 잔여분
         await runEodUnfilledIndicatorSellsForAllUsers(null);

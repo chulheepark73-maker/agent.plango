@@ -1,8 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-
-// 로그 폴더 경로
-const LOG_DIR = path.join(__dirname, '../log');
+const { LOG_DIR } = require('./appPaths');
 
 // 로그 폴더 생성
 if (!fs.existsSync(LOG_DIR)) {
@@ -56,11 +54,59 @@ const getTimestamp = () => {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`;
 };
 
+// 키 이름(소문자, -/_ 제거)이 이 패턴으로 끝나면 값을 *** 로 가린다 (hasToken 같은 boolean 은 유지)
+const SENSITIVE_KEY = /(secret|password|passwd|token|appkey|authorization|cookie)(encrypted)?$/;
+const isSensitiveKey = (key) => SENSITIVE_KEY.test(String(key).toLowerCase().replace(/[-_]/g, ''));
+
+const maskString = (s) =>
+  s
+    .replace(/(Bearer\s+)[^\s"',]+/gi, '$1***')
+    .replace(/([?&](?:token|access_token)=)[^&\s"']+/gi, '$1***');
+
+// axios 에러를 그대로 직렬화하면 요청 헤더(authorization)·본문(appkey/secretkey)이 포함된다
+const summarizeAxiosError = (err) => ({
+  name: 'AxiosError',
+  message: err.message,
+  code: err.code,
+  status: err.response?.status,
+  method: err.config?.method ? String(err.config.method).toUpperCase() : undefined,
+  url: String(err.config?.url || '').split('?')[0] || undefined,
+  data: err.response?.data,
+});
+
+const sanitize = (value, seen = new WeakSet(), depth = 0) => {
+  if (typeof value === 'string') return maskString(value);
+  if (value === null || typeof value !== 'object') return value;
+  if (seen.has(value)) return '[Circular]';
+  if (depth > 8) return '[Object]';
+  seen.add(value);
+
+  if (value.isAxiosError) return sanitize(summarizeAxiosError(value), seen, depth + 1);
+  if (Buffer.isBuffer(value)) return `[Buffer ${value.length} bytes]`;
+  if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) return value.map((v) => sanitize(v, seen, depth + 1));
+
+  const out = {};
+  if (value instanceof Error) {
+    out.name = value.name;
+    out.message = maskString(String(value.message || ''));
+  }
+  for (const key of Object.keys(value)) {
+    const v = value[key];
+    out[key] =
+      isSensitiveKey(key) && v != null && typeof v !== 'boolean'
+        ? '***'
+        : sanitize(v, seen, depth + 1);
+  }
+  return out;
+};
+
 // 로그 파일에 쓰기
-const writeToFile = (level, ...args) => {
+const writeToFile = (level, ...rawArgs) => {
   try {
     const logFile = getLogFileName();
     const timestamp = getTimestamp();
+    const args = rawArgs.map((arg) => sanitize(arg));
     const message = args.map(arg => {
       if (typeof arg === 'object') {
         return JSON.stringify(arg, null, 2);
@@ -101,7 +147,8 @@ const formatConsoleMessage = (level, ...args) => {
   }
   
   // 각 인자를 포맷팅
-  const formattedArgs = args.map(arg => {
+  const formattedArgs = args.map((rawArg) => {
+    const arg = sanitize(rawArg);
     if (typeof arg === 'object' && arg !== null) {
       // JSON을 예쁘게 포맷팅 (2칸 들여쓰기)
       return JSON.stringify(arg, null, 2);
