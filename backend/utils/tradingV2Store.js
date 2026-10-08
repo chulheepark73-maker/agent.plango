@@ -1355,6 +1355,18 @@ const sumFilledQtyForOrder = async (orderId) => {
   return Number(res.rows[0]?.qty) || 0;
 };
 
+/** 주문에 적재된 체결수량·체결금액 합 */
+const sumFillsForOrder = async (orderId) => {
+  await ensureTradingV2Tables();
+  const res = await pool.query(
+    `SELECT COALESCE(SUM(fill_qty), 0) AS qty,
+            COALESCE(SUM(COALESCE(NULLIF(fill_amount, 0), fill_price * fill_qty)), 0) AS amount
+     FROM trading_fills WHERE order_id = $1`,
+    [Number(orderId)]
+  );
+  return { qty: Number(res.rows[0]?.qty) || 0, amount: Number(res.rows[0]?.amount) || 0 };
+};
+
 /** 주문 상태만 갱신 (체결 없이 filled 확정 등) */
 const updateTradingOrderStatus = async (orderId, status) => {
   if (!ORDER_STATUSES.includes(status)) return null;
@@ -1779,6 +1791,7 @@ module.exports = {
   createTradingOrder,
   createTradingFill,
   sumFilledQtyForOrder,
+  sumFillsForOrder,
   updateTradingOrderStatus,
   markTradingStageFilled,
   reopenSplitStageAfterSell,

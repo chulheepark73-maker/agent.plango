@@ -17,6 +17,60 @@ axios.interceptors.request.use(async (config) => {
 });
 
 /**
+ * kt00009(계좌별주문체결현황)는 실전도 초당 1건(1700) — 토큰(계좌)별로 한 번에 1건만,
+ * 이전 요청의 응답을 받은 뒤 KT00009_GAP_MS 가 지나야 다음 요청을 보낸다
+ */
+const KT00009_GAP_MS = 1500;
+const KT00009_RELEASE_FAILSAFE_MS = 30000;
+/** @type {Map<string, Promise<void>>} auth -> 마지막 요청의 해제 Promise */
+const kt00009Gate = new Map();
+const headerOf = (h, name) => (typeof h?.get === 'function' ? h.get(name) : h?.[name]);
+
+axios.interceptors.request.use(async (config) => {
+  const h = config.headers || {};
+  if (headerOf(h, 'api-id') !== 'kt00009') return config;
+  const auth = String(headerOf(h, 'authorization') || '');
+  const prev = kt00009Gate.get(auth) || Promise.resolve();
+  let release;
+  const mine = new Promise((resolve) => {
+    release = resolve;
+  });
+  const tail = prev.then(() => mine);
+  kt00009Gate.set(auth, tail);
+  tail.then(() => {
+    if (kt00009Gate.get(auth) === tail) kt00009Gate.delete(auth);
+  });
+  await prev;
+  const failsafe = setTimeout(release, KT00009_RELEASE_FAILSAFE_MS);
+  config.__kt00009Release = () => {
+    clearTimeout(failsafe);
+    setTimeout(release, KT00009_GAP_MS);
+  };
+  return config;
+});
+
+const releaseKt00009 = (config) => {
+  const fn = config?.__kt00009Release;
+  if (fn) {
+    config.__kt00009Release = null;
+    fn();
+  }
+};
+axios.interceptors.response.use(
+  (response) => {
+    releaseKt00009(response.config);
+    return response;
+  },
+  (error) => {
+    releaseKt00009(error?.config);
+    return Promise.reject(error);
+  }
+);
+
+const isKiwoomRateLimitError = (err) =>
+  err?.status === 429 || /1700|허용된 요청 개수/.test(String(err?.message || ''));
+
+/**
  * 키움 미국주식 주문/정정/STOP 단가 포맷
  * $1 미만: 소수점 4자리, $1 이상: 소수점 2자리
  */
@@ -870,6 +924,43 @@ class KiwoomAPI {
     }
   }
 
+  // 당일 체결내역 전체 (kt00009 연속조회 포함) — 여러 주문 체결 확인을 1회 조회로 처리
+  async getTodayExecutionsAllPages(accessToken, appKey, appSecret, accountNo, dmstStexTp = 'KRX', maxPages = 10) {
+    const todayKst = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, '');
+    const rows = [];
+    let contYn = 'N';
+    let nextKey = '';
+    const fetchPage = () =>
+      this.getOrderHistory(
+        accessToken, appKey, appSecret, accountNo, todayKst, null, contYn, nextKey, dmstStexTp
+      );
+    for (let page = 0; page < maxPages; page += 1) {
+      let res;
+      try {
+        try {
+          res = await fetchPage();
+        } catch (err) {
+          if (!isKiwoomRateLimitError(err)) throw err;
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          res = await fetchPage();
+        }
+      } catch (err) {
+        // 다음 페이지 실패 시 이미 받은 페이지로 대조 (최근 주문은 앞 페이지에 있음)
+        if (page === 0) throw err;
+        console.warn(
+          `[키움증권 API] kt00009 ${page + 1}페이지 조회 실패 — 앞 ${page}페이지(${rows.length}건)로 처리: ${err?.message || err}`
+        );
+        break;
+      }
+      rows.push(...(res?.acnt_ord_cntr_prst_array || []));
+      const cont = res?.__cont;
+      if (!cont || cont.contYn !== 'Y' || !cont.nextKey) break;
+      contYn = 'Y';
+      nextKey = cont.nextKey;
+    }
+    return rows;
+  }
+
   // 주문 내역 조회
   // 주문체결 내역 조회 (최근 6개월치) - kt00009 (계좌별주문체결현황요청)
   async getOrderHistory(accessToken, appKey, appSecret, accountNo = null, startDate = null, endDate = null, contYn = 'N', nextKey = '', dmstStexTp = 'KRX', orderNo = null) {
@@ -972,6 +1063,14 @@ class KiwoomAPI {
         }
       }
 
+      // 연속조회 정보 (응답 직렬화에 섞이지 않도록 non-enumerable)
+      Object.defineProperty(response.data, '__cont', {
+        value: {
+          contYn: String(response.headers?.['cont-yn'] || 'N').toUpperCase(),
+          nextKey: String(response.headers?.['next-key'] || ''),
+        },
+        enumerable: false,
+      });
       return response.data;
     } catch (error) {
       console.error('[키움증권 API] 주문체결 내역 조회 실패:', error.response?.data || error.message);

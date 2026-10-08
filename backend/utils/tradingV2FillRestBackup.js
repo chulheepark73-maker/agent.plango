@@ -118,20 +118,48 @@ const fetchUsFill = async (state) => {
   return fill;
 };
 
-const fetchKrFill = async (state) => {
-  const { kiwoomInfo, stockMarket, orderNo, orderPrice } = state;
-  const executionResult = await kiwoomAPI.checkOrderExecution(
+/**
+ * 같은 시각에 도는 여러 주문 폴링이 kt00009 1회 결과를 공유 (사용자·거래소별)
+ * 진행 중이면 그 결과를 기다리고, 직전 조회가 KR_BATCH_REUSE_MS 이내면 재사용
+ */
+const KR_BATCH_REUSE_MS = 20 * 1000;
+/** @type {Map<string, { at: number, promise: Promise<object[]> }>} */
+const krBatchCache = new Map();
+
+const fetchKrExecutionsShared = (state, exchange) => {
+  const key = `${state.userId}:${exchange}`;
+  const hit = krBatchCache.get(key);
+  if (hit && Date.now() - hit.at < KR_BATCH_REUSE_MS) return hit.promise;
+  const { kiwoomInfo } = state;
+  const promise = kiwoomAPI.getTodayExecutionsAllPages(
     kiwoomInfo.accessToken,
     kiwoomInfo.appKey,
     kiwoomInfo.appSecret,
     kiwoomInfo.accountNo,
-    orderNo,
-    stockMarket === 'NXT' ? 'NXT' : 'KRX'
+    exchange
   );
-  if (!executionResult.isExecuted || !executionResult.acnt_ord_cntr_prst_array?.length) {
-    return null;
-  }
-  return aggregateRestExecutions(executionResult.acnt_ord_cntr_prst_array, orderPrice);
+  const entry = { at: Date.now(), promise };
+  krBatchCache.set(key, entry);
+  promise.then(
+    () => {
+      entry.at = Date.now();
+    },
+    () => {
+      if (krBatchCache.get(key) === entry) krBatchCache.delete(key);
+    }
+  );
+  return promise;
+};
+
+const fetchKrFill = async (state) => {
+  const { stockMarket, orderNo, orderPrice } = state;
+  const rows = await fetchKrExecutionsShared(state, stockMarket === 'NXT' ? 'NXT' : 'KRX');
+  const want = normOrderNo(orderNo);
+  const matched = rows.filter(
+    (r) => normOrderNo(r?.ord_no || r?.ord_no_remn || r?.order_no) === want
+  );
+  if (!matched.length) return null;
+  return aggregateRestExecutions(matched, orderPrice);
 };
 
 const pollOnce = async (key, opts = {}) => {

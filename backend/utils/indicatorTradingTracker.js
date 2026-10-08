@@ -761,7 +761,11 @@ const attemptBuysForStocks = async (userId, stocks, seq, { priceFresh = false } 
  * 큐에서 꺼내면서 제거하므로 연속 틱에도 한 번만 실행된다.
  * @returns {Promise<string[]>} 로그 메시지 배열 (재시도 대상이 아니면 빈 배열)
  */
-const retryPendingBuyOnTick = async (userId, code6) => {
+const retryPendingBuyOnTick = async (userId, code6, tickPrice = 0) => {
+  // 손절 후 재매수 대기: 기준가 위면 큐에 그대로 두고 넘어간다 (틱마다 꺼냈다 다시 넣지 않도록)
+  const rebuyBelow = getStopRebuyBelow(userId, String(code6 || '').substring(0, 6));
+  if (rebuyBelow > 0 && Number(tickPrice) > rebuyBelow) return [];
+
   const { takePendingBuy, addPendingBuy } = require('./indicatorPendingBuys');
   const entry = takePendingBuy(userId, code6);
   if (!entry) return [];

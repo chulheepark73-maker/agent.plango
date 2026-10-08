@@ -19,7 +19,6 @@ import {
   Button,
   IconButton,
   Chip,
-  Fade,
   Tooltip,
 } from '@mui/material';
 import NoteAltOutlinedIcon from '@mui/icons-material/NoteAltOutlined';
@@ -218,6 +217,17 @@ const HOLDINGS_DASH = {
 };
 
 const HOLDINGS_PAGE_SIZE = 3;
+const ORDER_PREVIEW_COUNT = 4;
+const ORDER_TEXT_COLOR = '#f0e0b0';
+
+const orderItemKey = (item) =>
+  `${item.source || 'v1'}_${item.planId || 0}_${item.stockCode}_${item.stage}_${item.orderNo}`;
+
+const formatOrderPrice = (item) => {
+  const str = formatNumber(item.orderPrice);
+  if (str === '-') return '-';
+  return isUsHoldingCode(item.stockCode, item.stockMarket) ? `$${str}` : `${str}원`;
+};
 const HOLDINGS_ROTATE_MS = 10000;
 
 const dashInnerCardBg = (theme) =>
@@ -238,8 +248,8 @@ const DashStatusCard = ({ icon: Icon, iconColor, title, subtitle, action, childr
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.25 }}>
       <Box
         sx={{
-          width: 36,
-          height: 36,
+          width: 30,
+          height: 30,
           borderRadius: '50%',
           bgcolor: (theme) => iconColor || alpha(theme.palette.text.primary, 0.12),
           display: 'flex',
@@ -248,7 +258,7 @@ const DashStatusCard = ({ icon: Icon, iconColor, title, subtitle, action, childr
           flexShrink: 0,
         }}
       >
-        <Icon sx={{ fontSize: '1.2rem', color: iconColor ? '#fff' : 'text.primary' }} />
+        <Icon sx={{ fontSize: '1rem', color: iconColor ? '#fff' : 'text.primary' }} />
       </Box>
       <Box sx={{ minWidth: 0 }}>
         <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1rem', color: HOLDINGS_DASH.text, lineHeight: 1.3 }}>
@@ -958,6 +968,21 @@ const Dashboard = () => {
     }
   }, []);
 
+  // 체결 등으로 주문이 목록에서 빠지면 매수종목만 조용히 재조회 (로딩 표시 없음)
+  const refreshHoldingsSilently = useCallback(async () => {
+    try {
+      const response = await apiClient.get('/holdings/dashboard-snapshot');
+      setHoldings(response.data?.holdings || []);
+    } catch (error) {
+      console.error('[대시보드] 매수종목 재조회 실패:', error);
+    }
+  }, []);
+
+  const prevOrderKeysRef = useRef(null);
+  const holdingsRefreshTimerRef = useRef(null);
+  const ordersSettledRef = useRef(null);
+  useEffect(() => () => clearTimeout(holdingsRefreshTimerRef.current), []);
+
   // 매수종목 현재가 REST 스냅샷 (장외만 — 장중은 WebSocket)
   const fetchHoldingsPrices = useCallback(async (showLoading = true) => {
     if (holdings.length === 0) {
@@ -1079,7 +1104,17 @@ const Dashboard = () => {
         } else if (msg.type === 'dashboard_status') {
           setTrailingBuyStatuses(msg.trailingStatus?.buyStatuses || []);
           setTrailingSellStatuses(msg.trailingStatus?.sellStatuses || []);
-          setOrderStatuses(msg.orderStatuses || []);
+          const nextOrders = msg.orderStatuses || [];
+          const nextKeys = new Set(
+            nextOrders.map((o) => `${o.source || 'v1'}_${o.planId || 0}_${o.stockCode}_${o.stage}_${o.orderNo}`)
+          );
+          const prevKeys = prevOrderKeysRef.current;
+          prevOrderKeysRef.current = nextKeys;
+          if (prevKeys && [...prevKeys].some((k) => !nextKeys.has(k))) {
+            clearTimeout(holdingsRefreshTimerRef.current);
+            holdingsRefreshTimerRef.current = setTimeout(() => ordersSettledRef.current?.(), 1500);
+          }
+          setOrderStatuses(nextOrders);
           setTrailingStatusLoading(false);
         } else if (msg.type === 'status' && msg.status === 'connected') {
           setPricesWsReady(true);
@@ -1217,18 +1252,66 @@ const Dashboard = () => {
     return () => clearInterval(t);
   }, [holdingsPageCount, holdingsRotatePaused, holdingsPage]);
 
-  const visibleHoldings = useMemo(
-    () =>
-      holdingsByRecent.slice(
-        holdingsPage * HOLDINGS_PAGE_SIZE,
-        holdingsPage * HOLDINGS_PAGE_SIZE + HOLDINGS_PAGE_SIZE
-      ),
-    [holdingsByRecent, holdingsPage]
-  );
+  const holdingsPages = useMemo(() => {
+    const pages = [];
+    for (let i = 0; i < holdingsByRecent.length; i += HOLDINGS_PAGE_SIZE) {
+      pages.push(holdingsByRecent.slice(i, i + HOLDINGS_PAGE_SIZE));
+    }
+    return pages;
+  }, [holdingsByRecent]);
 
   const holdingOrderNumbers = useMemo(() => {
-    return orderStatuses;
+    const ts = (o) => new Date(o.createdAt || o.updatedAt || 0).getTime() || 0;
+    return [...orderStatuses].sort((a, b) => ts(b) - ts(a));
   }, [orderStatuses]);
+  const previewOrderNumbers = useMemo(
+    () => holdingOrderNumbers.slice(0, ORDER_PREVIEW_COUNT),
+    [holdingOrderNumbers]
+  );
+  const hiddenOrderNumbers = useMemo(
+    () => holdingOrderNumbers.slice(ORDER_PREVIEW_COUNT),
+    [holdingOrderNumbers]
+  );
+  const [orderListOpen, setOrderListOpen] = useState(false);
+  useEffect(() => {
+    if (hiddenOrderNumbers.length === 0) setOrderListOpen(false);
+  }, [hiddenOrderNumbers.length]);
+
+  const renderOrderItem = (item, moreBadge = null) => {
+    const isUs = isUsHoldingCode(item.stockCode, item.stockMarket);
+    const displayName = resolveStockDisplayName(item.stockCode, stockNameMap, item.stockName);
+    const orderNoColor = ORDER_TEXT_COLOR;
+    const statusColor = orderNoColor;
+    return (
+      <Box key={orderItemKey(item)} sx={{ py: 0.5 }}>
+        <Typography
+          variant="body2"
+          sx={{ color: isUs ? '#C9A227' : HOLDINGS_DASH.muted, wordBreak: 'break-word' }}
+        >
+          {displayName} ({item.stockCode}) ({item.stage}차)
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, flexWrap: 'wrap' }}>
+          <Typography
+            variant="body2"
+            title={item.side === 'sell' ? '매도주문' : '매수주문'}
+            sx={{ color: orderNoColor }}
+          >
+            {item.orderNo}
+          </Typography>
+          <Typography variant="body2" sx={{ color: statusColor, whiteSpace: 'nowrap' }}>
+            {item.side === 'sell' ? '매도' : '매수'}
+            {item.status || '주문접수'}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="body2" sx={{ color: statusColor, wordBreak: 'break-word' }}>
+            주문가격 : {formatOrderPrice(item)}
+          </Typography>
+          {moreBadge}
+        </Box>
+      </Box>
+    );
+  };
 
   const todayNow = new Date();
   const todayKey = `${todayNow.getFullYear()}-${String(todayNow.getMonth() + 1).padStart(2, '0')}-${String(
@@ -1430,6 +1513,12 @@ const Dashboard = () => {
     }
   }, []);
 
+  ordersSettledRef.current = () => {
+    refreshHoldingsSilently();
+    fetchTradeHistory();
+    fetchPlanProgress();
+  };
+
   useEffect(() => {
     fetchDashboardSnapshot();
     fetchTradeHistory();
@@ -1619,15 +1708,7 @@ const Dashboard = () => {
                   {isUs ? `$${formatUsMoney(item.curPrice)}` : formatNumber(item.curPrice)}
                 </TableCell>
                 <TableCell align="center" sx={{ ...dashTableBodyCellSx, px: 0.5 }}>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: isBuy ? HOLDINGS_DASH.red : HOLDINGS_DASH.blue,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {Number(item[rateKey] || 0).toFixed(2)}%
-                  </Typography>
+                  {Number(item[rateKey] || 0).toFixed(2)}%
                 </TableCell>
                 <TableCell align="center" sx={{ ...dashTableBodyCellSx, px: 0.5 }}>{formatPercent(item.trailingPercent)}</TableCell>
               </TableRow>
@@ -1713,9 +1794,27 @@ const Dashboard = () => {
             onMouseEnter={() => setHoldingsHover(true)}
             onMouseLeave={() => setHoldingsHover(false)}
           >
-            <Fade in key={holdingsPage} timeout={300}>
+            {/* 모든 페이지를 같은 칸에 겹쳐 크로스페이드 — 높이는 가장 긴 페이지 기준으로 고정 */}
+            <Box sx={{ display: 'grid' }}>
+            {holdingsPages.map((pageGroups, pageIdx) => {
+              const active = pageIdx === holdingsPage;
+              return (
+            <Box
+              key={pageIdx}
+              aria-hidden={!active}
+              sx={{
+                gridArea: '1 / 1',
+                minWidth: 0,
+                opacity: active ? 1 : 0,
+                visibility: active ? 'visible' : 'hidden',
+                pointerEvents: active ? 'auto' : 'none',
+                transition: active
+                  ? 'opacity 800ms ease, visibility 0s'
+                  : 'opacity 800ms ease, visibility 0s linear 800ms',
+              }}
+            >
             <Grid container rowSpacing={2} columnSpacing={1.5} alignItems="stretch">
-              {visibleHoldings.map((group) => {
+              {pageGroups.map((group) => {
                 const priceInfo =
                   holdingsPriceMap.get(group.stockCode) ||
                   holdingsPriceMap.get(holdingCodeKey(group.stockCode, group.stockMarket));
@@ -1743,7 +1842,10 @@ const Dashboard = () => {
                 );
               })}
             </Grid>
-            </Fade>
+            </Box>
+              );
+            })}
+            </Box>
             {holdingsPageCount > 1 && (
               <Box
                 sx={{
@@ -1867,47 +1969,41 @@ const Dashboard = () => {
                     rowGap: 1.5,
                   }}
                 >
-                  {holdingOrderNumbers.map((item) => {
-                    const isUs = isUsHoldingCode(item.stockCode, item.stockMarket);
-                    const orderPriceStr = formatNumber(item.orderPrice);
-                    const orderPriceDisplay =
-                      orderPriceStr === '-' ? '-' : isUs ? `$${orderPriceStr}` : `${orderPriceStr}원`;
-                    const displayName = resolveStockDisplayName(
-                      item.stockCode,
-                      stockNameMap,
-                      item.stockName
-                    );
-                    const statusColor = item.status === '체결완료' ? '#3fb950' : '#d29922';
-                    return (
-                      <Box
-                        key={`${item.source || 'v1'}_${item.planId || 0}_${item.stockCode}_${item.stage}_${item.orderNo}`}
-                        sx={{ py: 0.5 }}
-                      >
-                        <Typography
-                          variant="body2"
-                          sx={{ color: isUs ? '#C9A227' : HOLDINGS_DASH.muted, wordBreak: 'break-word' }}
+                  {previewOrderNumbers.map((item, idx) => {
+                    const isLast = idx === previewOrderNumbers.length - 1;
+                    const moreBadge =
+                      isLast && hiddenOrderNumbers.length > 0 ? (
+                        <Tooltip
+                          arrow
+                          placement="top"
+                          title={
+                            <Box sx={{ py: 0.25 }}>
+                              {hiddenOrderNumbers.map((h) => (
+                                <Box key={orderItemKey(h)} sx={{ whiteSpace: 'nowrap' }}>
+                                  {resolveStockDisplayName(h.stockCode, stockNameMap, h.stockName)} ({h.stage}차){' '}
+                                  {h.side === 'sell' ? '매도' : '매수'} · {formatOrderPrice(h)}
+                                </Box>
+                              ))}
+                            </Box>
+                          }
                         >
-                          {displayName} ({item.stockCode}) ({item.stage}차)
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, flexWrap: 'wrap' }}>
-                          <Typography variant="body1" sx={{ fontWeight: 700, color: HOLDINGS_DASH.text }}>
-                            {item.orderNo}
-                          </Typography>
-                          <Typography
-                            variant="caption"
-                            sx={{ fontWeight: 700, color: statusColor, whiteSpace: 'nowrap' }}
-                          >
-                            {item.status || '주문접수'}
-                          </Typography>
-                        </Box>
-                        <Typography
-                          variant="body2"
-                          sx={{ fontWeight: 700, color: statusColor, wordBreak: 'break-word' }}
-                        >
-                          주문가격 : {orderPriceDisplay}
-                        </Typography>
-                      </Box>
-                    );
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            label={`+${hiddenOrderNumbers.length}건`}
+                            onClick={() => setOrderListOpen(true)}
+                            sx={{
+                              ml: 'auto',
+                              height: 20,
+                              fontSize: '0.7rem',
+                              color: alpha(ORDER_TEXT_COLOR, 0.7),
+                              borderColor: alpha(ORDER_TEXT_COLOR, 0.5),
+                              cursor: 'pointer',
+                            }}
+                          />
+                        </Tooltip>
+                      ) : null;
+                    return renderOrderItem(item, moreBadge);
                   })}
                 </Box>
               )}
@@ -1917,7 +2013,7 @@ const Dashboard = () => {
       </Box>
 
       {/* 매도완료 / Plan 진행사항 분할 섹션 */}
-      <Grid container rowSpacing={3} columnSpacing={1.5} sx={{ mt: -0.5 }} alignItems="stretch">
+      <Grid container rowSpacing={3} columnSpacing={1.5} sx={{ mt: -1 }} alignItems="stretch">
         <Grid
           item
           xs={12}
@@ -2046,10 +2142,10 @@ const Dashboard = () => {
                             {stageLabel}
                           </TableCell>
                           <TableCell align="right" sx={{ ...dashTableBodyCellSx, px: 0.5, fontVariantNumeric: 'tabular-nums' }}>
-                            {isUs ? `$${formatNumber(buyPrice)}` : formatNumber(buyPrice)}
+                            {isUs ? `$${formatNumber(buyPrice)}` : formatNumber(Math.round(buyPrice))}
                           </TableCell>
                           <TableCell align="right" sx={{ ...dashTableBodyCellSx, px: 0.5, fontVariantNumeric: 'tabular-nums' }}>
-                            {isUs ? `$${formatNumber(sellPrice)}` : formatNumber(sellPrice)}
+                            {isUs ? `$${formatNumber(sellPrice)}` : formatNumber(Math.round(sellPrice))}
                           </TableCell>
                           <TableCell align="right" sx={{ ...dashTableBodyCellSx, px: 0.5, fontVariantNumeric: 'tabular-nums' }}>
                             {formatNumber(sellQty)}
@@ -2494,6 +2590,27 @@ const Dashboard = () => {
         onClose={() => setLiquidateTarget(null)}
         onDone={() => fetchDashboardSnapshot()}
       />
+
+      <Dialog open={orderListOpen} onClose={() => setOrderListOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontSize: '1rem', fontWeight: 700 }}>
+          주문번호 전체 ({holdingOrderNumbers.length}건)
+        </DialogTitle>
+        <DialogContent dividers>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+              columnGap: 2,
+              rowGap: 1.5,
+            }}
+          >
+            {holdingOrderNumbers.map((item) => renderOrderItem(item))}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOrderListOpen(false)}>닫기</Button>
+        </DialogActions>
+      </Dialog>
     </PageFrame>
   );
 };

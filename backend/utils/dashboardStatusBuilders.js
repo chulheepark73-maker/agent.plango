@@ -120,6 +120,7 @@ const buildV2OrderStatuses = async (userId) => {
       source: 'v2',
       planId: row.planId || null,
       updatedAt: row.order?.updatedAt || null,
+      createdAt: row.order?.createdAt || null,
     });
   }
 

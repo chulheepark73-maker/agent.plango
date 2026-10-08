@@ -25,6 +25,11 @@ const MA_DEFS = [
   { period: 120, color: '#9e9e9e', key: 'ma120' },
 ];
 
+const TRADE_MARKER_COLOR = '#ffd600';
+/** 흰 배경에서 노란 글자가 보이도록 테두리 */
+const TRADE_MARKER_TEXT_OUTLINE =
+  '-1px -1px 0 #5d4037, 1px -1px 0 #5d4037, -1px 1px 0 #5d4037, 1px 1px 0 #5d4037';
+
 const INTERVAL_OPTIONS = [
   { value: 'day', label: '일봉' },
   { value: 'week', label: '주봉' },
@@ -168,7 +173,7 @@ const StockDailyChartDialog = ({
           price,
           text: label,
           isSell,
-          color: isSell ? '#c62828' : '#1b5e20',
+          color: TRADE_MARKER_COLOR,
         });
       }
     }
@@ -770,6 +775,7 @@ const StockDailyChartDialog = ({
                         fontSize: 11,
                         fontWeight: 700,
                         color: m.color,
+                        textShadow: TRADE_MARKER_TEXT_OUTLINE,
                         lineHeight: 1.15,
                         whiteSpace: 'nowrap',
                       }}
@@ -785,6 +791,7 @@ const StockDailyChartDialog = ({
                         fontSize: 11,
                         fontWeight: 700,
                         color: m.color,
+                        textShadow: TRADE_MARKER_TEXT_OUTLINE,
                         lineHeight: 1.15,
                         whiteSpace: 'nowrap',
                       }}

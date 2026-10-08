@@ -73,7 +73,7 @@ const menuItems = [
 
 const sideMenuGroups = [
   {
-    title: '서버',
+    title: '서버 서비스',
     items: [
       { Icon: DnsIcon, path: '/server-registration', label: '서버등록' },
     ],
@@ -81,13 +81,13 @@ const sideMenuGroups = [
   {
     title: '구독서비스',
     items: [
-      { Icon: LocalOfferIcon, path: '/subscription-plans', label: '구독플랜' },
+      { Icon: LocalOfferIcon, path: '/subscription-plans', label: '서버구독 플랜' },
     ],
   },
   {
-    title: '개인정보',
+    title: '나의 서비스',
     items: [
-      { Icon: ManageAccountsIcon, path: '/profile', label: '정보수정' },
+      { Icon: ManageAccountsIcon, path: '/profile', label: '내 정보관리' },
       { Icon: TelegramIcon, path: '/telegram-settings', label: '텔레그램 설정' },
       { Icon: LockResetIcon, path: '/change-password', label: '비밀번호변경' },
     ],

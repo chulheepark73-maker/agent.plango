@@ -73,7 +73,7 @@ const Profile = () => {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <ManageAccountsIcon sx={{ fontSize: '1.05rem' }} />
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-            정보수정
+            내 정보관리
           </Typography>
         </Box>
       </Paper>

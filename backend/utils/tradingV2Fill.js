@@ -8,6 +8,7 @@ const {
   findTradingOrderByBrokerNo,
   createTradingFill,
   sumFilledQtyForOrder,
+  sumFillsForOrder,
   updateTradingOrderStatus,
   markTradingStageFilled,
   reopenSplitStageAfterSell,
@@ -68,7 +69,21 @@ const isLooksComplete = (evt, requestedQty, filledAfter) => {
 };
 
 /**
+ * 누적 평균가 기준 이번 체결분 금액·단가
+ * (키움 WS 910·REST 집계는 주문 누적 평균 체결가라서, 그대로 이번 수량에 곱하면 평균이 틀어진다)
+ */
+const deriveDeltaFromCumAvg = ({ cumAvgPrice, existingQty, existingAmount, qtyToAdd, stockMarket }) => {
+  if (!(cumAvgPrice > 0) || !(qtyToAdd > 0)) return null;
+  const amount = cumAvgPrice * (existingQty + qtyToAdd) - existingAmount;
+  const unit = amount / qtyToAdd;
+  // 반올림된 평균가·누락 이벤트로 터무니없는 값이 나오면 쓰지 않는다
+  if (!(unit > 0) || Math.abs(unit - cumAvgPrice) / cumAvgPrice > 0.3) return null;
+  return { fillPrice: roundFillPrice(unit, stockMarket) || unit, fillAmount: amount };
+};
+
+/**
  * 체결분 반영 (부분/완전 공용)
+ * @param {number} [args.cumAvgPrice] execPrice 가 주문 누적 평균가일 때 (누적 수량 기준 이벤트)
  * @returns {Promise<{ok:boolean, complete?:boolean, side?:string, planId?:number}|null>}
  */
 async function applyTradingV2FillProgress({
@@ -76,6 +91,7 @@ async function applyTradingV2FillProgress({
   matched,
   execPrice,
   execQty,
+  cumAvgPrice = null,
   brokerFillNo = null,
   forceComplete = false,
   source = 'ws',
@@ -85,7 +101,7 @@ async function applyTradingV2FillProgress({
   const order = matched.order;
   const uid = String(userId);
   const requestedQty = Number(order.requestedQty) || 0;
-  const existingSum = await sumFilledQtyForOrder(order.id);
+  const { qty: existingSum, amount: existingAmount } = await sumFillsForOrder(order.id);
   const remaining = requestedQty > 0 ? Math.max(0, requestedQty - existingSum) : execQty;
 
   // 이미 완결된 수량이면 상태만 정리
@@ -107,14 +123,24 @@ async function applyTradingV2FillProgress({
     forceComplete ||
     (requestedQty > 0 && filledAfter >= requestedQty);
 
+  const delta = deriveDeltaFromCumAvg({
+    cumAvgPrice,
+    existingQty: existingSum,
+    existingAmount,
+    qtyToAdd,
+    stockMarket: resolveStockMarket(matched),
+  });
+  const fillPrice = delta ? delta.fillPrice : execPrice;
+
   console.log(
     `${LOG}[${uid}] ${order.side} ${complete ? '완전' : '부분'}(${source}): plan=${matched.planId} ` +
-      `order=${order.id} ${matched.symbol} @${execPrice} +${qtyToAdd} ` +
+      `order=${order.id} ${matched.symbol} @${fillPrice}${delta ? ` (누적평균 ${cumAvgPrice})` : ''} +${qtyToAdd} ` +
       `(${existingSum}→${filledAfter}/${requestedQty || '?'})`
   );
 
   await createTradingFill(uid, matched.planId, order.id, {
-    fillPrice: execPrice,
+    fillPrice,
+    fillAmount: delta ? delta.fillAmount : undefined,
     fillQty: qtyToAdd,
     brokerFillNo,
     orderStatus: complete ? 'filled' : 'partial',
@@ -278,11 +304,15 @@ async function applyWsFill(userId, evt) {
   const complete = isLooksComplete(evt, requestedQty, filledAfterGuess);
 
   // 부분체결도 fills 적재 (stage는 완전 시에만)
+  // 910(체결가)는 주문 누적 평균가 — 911 누적수량과 짝일 때만 평균가로 취급
+  const cumAvgPrice = evt.cumExecQty > 0 && evt.execPriceSource === '910' ? execPrice : null;
+
   return applyTradingV2FillProgress({
     userId,
     matched,
     execPrice,
     execQty,
+    cumAvgPrice,
     brokerFillNo: evt.fillNo || evt.brokerFillNo || null,
     forceComplete: complete,
     source: 'ws',
@@ -340,6 +370,7 @@ async function applyRestFill({ userId, orderNo, restExecQty, restExecPrice }) {
     matched,
     execPrice,
     execQty: delta,
+    cumAvgPrice: Number(restExecPrice) > 0 ? Number(restExecPrice) : null,
     brokerFillNo: `rest:${orderNo}:${existingSum + delta}`,
     forceComplete,
     source: 'rest',

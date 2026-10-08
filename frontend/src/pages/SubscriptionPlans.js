@@ -254,7 +254,7 @@ const SubscriptionPlans = () => {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <LocalOfferIcon sx={{ fontSize: '1.05rem' }} />
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-            구독플랜
+            서버구독 플랜
           </Typography>
         </Box>
       </Paper>
@@ -301,7 +301,7 @@ const SubscriptionPlans = () => {
                 서버등록 메뉴에서 등록하세요.
               </Alert>
             )}
-            <SectionTitle>현재 구독</SectionTitle>
+            <SectionTitle>현재 이용중인 서버구독</SectionTitle>
             <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                 <Chip
@@ -331,7 +331,7 @@ const SubscriptionPlans = () => {
               </Typography>
             </Paper>
 
-            <SectionTitle>플랜 선택</SectionTitle>
+            <SectionTitle>서버구독 플랜 선택</SectionTitle>
             {plans.map((plan) => {
               const isCurrent = plan.code === currentCode;
               const isFree = plan.code === 'free';

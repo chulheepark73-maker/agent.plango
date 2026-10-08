@@ -310,7 +310,7 @@ function onUserTick(m, tick) {
       const { hasPendingBuy } = require('../utils/indicatorPendingBuys');
       if (hasPendingBuy(m.userId, codeKey)) {
         const { retryPendingBuyOnTick } = require('../utils/indicatorTradingTracker');
-        retryPendingBuyOnTick(m.userId, codeKey)
+        retryPendingBuyOnTick(m.userId, codeKey, priceRow.price)
           .then((logs) => {
             logs.forEach((line) => console.log(`[시세대기매수][${m.userId}] ${line}`));
           })

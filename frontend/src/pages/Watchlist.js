@@ -536,6 +536,10 @@ const WatchlistRow = memo(({
           >
             {targetBuy.auto !== 'Y' ? '정지' : targetBuy.infiniteInProgress ? '진행중' : '대기'}
           </Typography>
+        ) : targetBuy?.splitComplete ? (
+          <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap' }}>
+            분할완료
+          </Typography>
         ) : targetBuy?.stage != null && Number(targetBuy.stage) > 0 ? (
           <Typography
             variant="body2"
@@ -1490,7 +1494,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
       const stage = isInfinite ? null : buyCur > 0 ? buyCur : null;
       const infiniteFields = isInfinite
         ? { infiniteInProgress: !!item.infiniteInProgress, infiniteHeldQty: item.infiniteHeldQty || 0 }
-        : {};
+        : { splitComplete: !!item.splitComplete };
 
       // buyX_end가 'Y'인 경우 매수가 완료된 것이므로 표시하지 않음
       const buyXEnd = buyCur > 0 ? item[`buy${buyCur}_end`] : null;
@@ -1687,6 +1691,8 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
           }
         }
         item.buy_cur = selectedCur || (hasBuyStage ? 1 : 0);
+        // 설정된 모든 차수 매수 완료(보유 중) → 다음 매수 차수 없음
+        item.splitComplete = hasBuyStage && !selectedCur;
         list.push(item);
       }
       setAutoTradingList(list);

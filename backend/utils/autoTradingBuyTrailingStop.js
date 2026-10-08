@@ -1,59 +1,14 @@
-const fs = require('fs').promises;
-const path = require('path');
 const { sendTelegramToUserById } = require('../services/telegramService');
 const { isSessionOpenForMarket, autoCodesMatch, formatTelegramPrice } = require('./autoTradingMarket');
 
 const TRAILING_TELEGRAM_PROGRESS_MS = 60 * 1000;
-const SAVE_THROTTLE_MS = 2000;
+const PROGRESS_LOG_THROTTLE_MS = 2000;
 const SESSION_CHECK_MS = 30000;
 
 const buyLog = (userId) => `[Buy Trailing Stop][${userId}]`;
 
 // `${userId}_${stockCode}_${buyStage}` -> state
 const buyTrailingStopIntervals = new Map();
-
-const BUY_TRAILING_STOP_DATA_DIR = path.join(__dirname, '..', 'data', 'buy_trailing_stop');
-
-const ensureBuyTrailingStopDataDir = async () => {
-  try {
-    await fs.mkdir(BUY_TRAILING_STOP_DATA_DIR, { recursive: true });
-  } catch (error) {
-    console.error('[Buy Trailing Stop] 디렉토리 생성 실패:', error);
-  }
-};
-
-const getDateTimeString = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const seconds = String(now.getSeconds()).padStart(2, '0');
-  return `${year}${month}${day}-${hours}-${minutes}-${seconds}`;
-};
-
-const savePriceToFile = async (filePath, dateTimeStr, price, status = null) => {
-  try {
-    let data = {};
-    try {
-      const fileContent = await fs.readFile(filePath, 'utf8');
-      data = JSON.parse(fileContent);
-    } catch {
-      data = {};
-    }
-    data[dateTimeStr] = price;
-    if (status) {
-      data.status = status.status;
-      data.reason = status.reason;
-      data.endTime = status.endTime;
-      data.endPrice = status.endPrice;
-    }
-    await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8');
-  } catch (error) {
-    console.error(`[Buy Trailing Stop] 가격 저장 실패: ${filePath}`, error);
-  }
-};
 
 const notifySubscribeRefresh = () => {
   try {
@@ -72,13 +27,6 @@ const endBuyTrailing = async (checkKey, state, reason, endPrice, telegramMsg) =>
   buyTrailingStopIntervals.delete(checkKey);
   notifySubscribeRefresh();
 
-  const endDateTimeStr = getDateTimeString();
-  await savePriceToFile(state.filePath, endDateTimeStr, endPrice, {
-    status: reason === 'buy trailing stop 조건 만족' ? '성공' : '실패',
-    reason,
-    endTime: endDateTimeStr,
-    endPrice,
-  });
   if (telegramMsg) {
     void sendTelegramToUserById(state.userId, telegramMsg);
   }
@@ -197,12 +145,7 @@ async function processBuyTrailingTick(checkKey, state, currentPrice) {
     }
 
     const now = Date.now();
-    if (!state.lastSaveAt || now - state.lastSaveAt >= SAVE_THROTTLE_MS) {
-      state.lastSaveAt = now;
-      void savePriceToFile(state.filePath, getDateTimeString(), currentPrice);
-    }
-
-    if (!state.lastProgressLogAt || now - state.lastProgressLogAt >= SAVE_THROTTLE_MS) {
+    if (!state.lastProgressLogAt || now - state.lastProgressLogAt >= PROGRESS_LOG_THROTTLE_MS) {
       state.lastProgressLogAt = now;
       console.log(
         `${buyLog(state.userId)} 모니터링 중: ${state.stockCode}, 차수=${state.buyStage}차, low_price=${state.lowPrice}, cur_price=${state.curPrice}, 상승률=${risePercent.toFixed(2)}%, 기준=${state.trailingPercent}%`
@@ -250,13 +193,11 @@ const startBuyTrailingStop = async (
     curPrice: initialPrice,
     lowPrice: initialPrice,
     trailingPercent,
-    filePath: null,
     kiwoomInfo,
     buyQty,
     stockMarket,
     buyXPrice,
     stockName: stockName || stockCode,
-    lastSaveAt: Date.now(),
     lastProgressTelegramAt: 0,
     processing: false,
     sessionCheckId: null,
@@ -264,14 +205,6 @@ const startBuyTrailingStop = async (
     v2Meta: options.v2Meta || null,
   };
   buyTrailingStopIntervals.set(checkKey, state);
-
-  await ensureBuyTrailingStopDataDir();
-
-  const dateTimeStr = getDateTimeString();
-  const fileName = `${dateTimeStr}_buy_${stockName || stockCode}.json`;
-  const filePath = path.join(BUY_TRAILING_STOP_DATA_DIR, fileName);
-  state.filePath = filePath;
-  await savePriceToFile(filePath, dateTimeStr, initialPrice);
 
   console.log(
     `${buyLog(userId)} 모니터링 시작(WS): ${stockCode} (${stockName}), 차수=${buyStage}차, 초기가격=${initialPrice}, 목표가=${buyXPrice}, trailingPercent=${trailingPercent}%`
