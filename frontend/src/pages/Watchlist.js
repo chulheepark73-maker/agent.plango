@@ -357,6 +357,25 @@ const WATCHLIST_ICON_COL_SX = {
   whiteSpace: 'nowrap',
 };
 
+/** 종목 열 — 다른 열이 모두 고정 폭이라 지정하지 않으면 남는 폭이 0 이 될 수 있다 */
+const WATCHLIST_NAME_COL_SX = {
+  width: 200,
+  boxSizing: 'border-box',
+};
+
+const WATCHLIST_CHECKBOX_COL_WIDTH = 48;
+
+/** 이보다 좁아지면 표 안에서 가로 스크롤 */
+const WATCHLIST_TABLE_MIN_WIDTH =
+  WATCHLIST_CHECKBOX_COL_WIDTH +
+  WATCHLIST_STRATEGY_COL_SX.width +
+  WATCHLIST_NAME_COL_SX.width +
+  WATCHLIST_PRICE_COL_SX.width +
+  WATCHLIST_STAGE_COL_SX.width +
+  WATCHLIST_TARGET_COL_SX.width +
+  WATCHLIST_MID_COL_SX.width * 3 +
+  WATCHLIST_ICON_COL_SX.width;
+
 // 관심종목 행 컴포넌트 (메모이제이션으로 최적화)
 const formatPriceWithCurrency = (value, currencySymbol = '원') => {
   if (currencySymbol === '$') {
@@ -426,12 +445,21 @@ const WatchlistRow = memo(({
     (item.nxtTradable === true || item.stockMarket === 'NXT' || priceInfo?.stockMarket === 'NXT');
 
   return (
-    <TableRow hover sx={{ '& .MuiTableCell-root': { py: 0.4 } }}>
+    <TableRow
+      hover
+      sx={{
+        height: 40,
+        '& .MuiTableCell-root': { pt: 0.45, pb: 0.15 },
+        '& .MuiTypography-root': { lineHeight: 1.2 },
+      }}
+    >
       <TableCell padding="checkbox">
         <Checkbox
           checked={isSelected}
           disabled={checkboxDisabled}
           onChange={handleCheckboxChange}
+          size="small"
+          sx={{ p: 0.5, '& .MuiSvgIcon-root': { fontSize: '1.1rem' } }}
         />
       </TableCell>
       <TableCell align="center" sx={WATCHLIST_STRATEGY_COL_SX}>
@@ -439,7 +467,6 @@ const WatchlistRow = memo(({
           <Typography
             variant="body2"
             sx={{
-              fontWeight: 600,
               fontSize: '0.875rem',
               lineHeight: 1.3,
               display: 'block',
@@ -449,7 +476,7 @@ const WatchlistRow = memo(({
             {strategyTypeLabel}
           </Typography>
         ) : (
-          <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
+          <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
             -
           </Typography>
         )}
@@ -457,13 +484,13 @@ const WatchlistRow = memo(({
       {/* 종목명 및 코드 (세로로 표시) */}
       <TableCell>
         <Box>
-          <Box display="flex" alignItems="center" gap={0.5} mb={0.5}>
-            {isNXT && <NxtBadge size={16} sx={{ color: 'text.primary' }} />}
+          <Box display="flex" alignItems="center" gap={0.5}>
             <Typography variant="body2">
               {item.stockName || item.stockCode}
             </Typography>
+            {isNXT && <NxtBadge size={16} sx={{ color: 'text.primary' }} />}
           </Box>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          <Typography variant="body2">
             {item.stockCode}
           </Typography>
         </Box>
@@ -527,28 +554,24 @@ const WatchlistRow = memo(({
         {targetBuy?.infinite ? (
           <Typography
             variant="body2"
-            sx={{
-              fontWeight: 600,
-              lineHeight: 1.4,
-              color: targetBuy.auto === 'Y' && targetBuy.infiniteInProgress ? 'text.primary' : 'text.secondary',
-            }}
+            sx={{ lineHeight: 1.4 }}
             aria-label="무한매매"
           >
-            {targetBuy.auto !== 'Y' ? '정지' : targetBuy.infiniteInProgress ? '진행중' : '대기'}
+            {targetBuy.auto !== 'Y' ? '정지' : targetBuy.infiniteInProgress ? '진행' : '대기'}
           </Typography>
         ) : targetBuy?.splitComplete ? (
-          <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap' }}>
-            분할완료
+          <Typography variant="body2" sx={{ lineHeight: 1.4, whiteSpace: 'nowrap' }}>
+            분완
           </Typography>
         ) : targetBuy?.stage != null && Number(targetBuy.stage) > 0 ? (
           <Typography
             variant="body2"
-            sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', lineHeight: 1.4 }}
+            sx={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.4 }}
           >
             {targetBuy.stage}
           </Typography>
         ) : (
-          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.4 }}>
+          <Typography variant="body2" sx={{ lineHeight: 1.4 }}>
             -
           </Typography>
         )}
@@ -558,13 +581,13 @@ const WatchlistRow = memo(({
           <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.4 }}>
             {formatPriceWithCurrency(targetBuy.target_price, currencySymbol)}
             {targetBuy.infinite && (
-              <Box component="span" sx={{ fontSize: '0.75rem', color: 'text.secondary', ml: 0.25 }}>
+              <Box component="span" sx={{ fontSize: '0.75rem', ml: 0.25 }}>
                 (진입)
               </Box>
             )}
           </Typography>
         ) : (
-          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.4 }}>
+          <Typography variant="body2" sx={{ lineHeight: 1.4 }}>
             -
           </Typography>
         )}
@@ -575,7 +598,7 @@ const WatchlistRow = memo(({
             {formatNumber(targetBuy.infiniteHeldQty)}주
           </Typography>
         ) : targetBuy?.infinite && targetBuy.target_qty ? (
-          <Typography variant="body2" color="text.secondary" title="진입가 기준 1회 매수 예정 수량">
+          <Typography variant="body2" title="진입가 기준 1회 매수 예정 수량">
             {formatNumber(targetBuy.target_qty)}주
             <Box component="span" sx={{ fontSize: '0.75rem', ml: 0.25 }}>
               (예정)
@@ -586,7 +609,7 @@ const WatchlistRow = memo(({
             {formatNumber(targetBuy.target_qty)}주
           </Typography>
         ) : (
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2">
             -
           </Typography>
         )}
@@ -1115,6 +1138,16 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
     })),
   }));
 
+  const [groupCounts, setGroupCounts] = useState({});
+  const fetchGroupCounts = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get(`${apiBase}/group-counts`);
+      setGroupCounts(data || {});
+    } catch {
+      /* 탭 숫자는 보조 정보 */
+    }
+  }, [apiBase]);
+
   // 관심종목 목록 조회
   const fetchWatchlist = useCallback(async (targetGroupNo = watchlistTab) => {
     try {
@@ -1124,6 +1157,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
         params: { groupNo: targetGroupNo },
       });
       setWatchlist(response.data || []);
+      fetchGroupCounts();
     } catch (error) {
       console.error('[관심종목] 목록 조회 실패:', error);
       let message = '관심종목 목록을 불러오는 중 오류가 발생했습니다.';
@@ -1137,7 +1171,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
     } finally {
       setLoading(false);
     }
-  }, [watchlistTab, apiBase]);
+  }, [watchlistTab, apiBase, fetchGroupCounts]);
 
   // 거래시간·주말 (대시보드와 동일: 1분마다 갱신)
   useEffect(() => {
@@ -2098,6 +2132,11 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
 
   const content = (
     <>
+      {errorMessage && (
+        <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setErrorMessage(null)}>
+          {errorMessage}
+        </Alert>
+      )}
 
       {/* 관심종목 리스트 */}
       <Paper sx={{ p: 3, mb: 3 }}>
@@ -2151,22 +2190,32 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
                 }}
               >
                 {watchListNames[n] || `관심종목${n}`}
+                {groupCounts[n] > 0 && (
+                  <Box component="span" sx={{ ml: 0.5, fontWeight: 400, opacity: 0.8 }}>
+                    {groupCounts[n]}
+                  </Box>
+                )}
               </Button>
             );
           })}
         </Box>
         <TableContainer>
-        <Table sx={{ tableLayout: 'fixed', width: '100%' }}>
+        <Table sx={{ tableLayout: 'fixed', width: '100%', minWidth: WATCHLIST_TABLE_MIN_WIDTH }}>
           <TableHead>
             <TableRow sx={{ bgcolor: 'action.hover', '& .MuiTableCell-root': { py: 1.5 } }}>
-              <TableCell padding="checkbox" sx={{ fontWeight: 'bold', fontSize: '0.875rem' }}></TableCell>
+              <TableCell
+                padding="checkbox"
+                sx={{ fontWeight: 'bold', fontSize: '0.875rem', width: WATCHLIST_CHECKBOX_COL_WIDTH }}
+              ></TableCell>
               <TableCell
                 align="center"
                 sx={{ fontWeight: 'bold', fontSize: '0.875rem', ...WATCHLIST_STRATEGY_COL_SX }}
               >
                 전략유형
               </TableCell>
-              <TableCell sx={{ fontWeight: 'bold', fontSize: '0.875rem' }}>종목</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', fontSize: '0.875rem', ...WATCHLIST_NAME_COL_SX }}>
+                종목
+              </TableCell>
               <TableCell
                 align="center"
                 sx={{ fontWeight: 'bold', fontSize: '0.875rem', ...WATCHLIST_PRICE_COL_SX }}
@@ -2294,12 +2343,6 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
       {accountNoMissing && (
         <Alert severity="warning" sx={{ mb: 3 }}>
           계좌번호를 입력해야 자동매매가 동작합니다. 환경설정의 &quot;키움증권 계좌번호 설정&quot;에서 계좌번호를 저장해 주세요.
-        </Alert>
-      )}
-
-      {errorMessage && (
-        <Alert severity="warning" sx={{ mb: 3 }} onClose={() => setErrorMessage(null)}>
-          {errorMessage}
         </Alert>
       )}
 

@@ -11,7 +11,12 @@ const {
   buildTrailingStatuses,
   buildStockNameMap,
 } = require('../utils/dashboardStatusBuilders');
-const { listTradingPlans, getTradingPlanById, listCompletedSellsFromTradingV2 } = require('../utils/tradingV2Store');
+const {
+  listTradingPlans,
+  getTradingPlanById,
+  listCompletedSellsFromTradingV2,
+  listBuyFillsFromTradingV2,
+} = require('../utils/tradingV2Store');
 const { avgCostFromPlanFills, resolveSplitSellTarget } = require('../utils/infiniteTradeBands');
 const { buildSplitLots } = require('../utils/splitTradeLots');
 const { ensurePlanStatusTable, getPlanStatusByUserId } = require('../utils/planStatusStore');
@@ -349,12 +354,20 @@ router.get('/prices', authenticateToken, async (req, res) => {
 router.get('/trade-history', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { year, month } = req.query; // 클라이언트에서 전달된 year와 month
+    const { year, month, includeBuys } = req.query; // 클라이언트에서 전달된 year와 month
 
     let userCompleted = await listCompletedSellsFromTradingV2(userId).catch((err) => {
       console.warn('[Trade History] V2 매도완료 조회 실패:', err.message);
       return [];
     });
+    userCompleted = userCompleted.map((item) => ({ side: 'SELL', ...item }));
+    if (includeBuys === '1') {
+      const buys = await listBuyFillsFromTradingV2(userId).catch((err) => {
+        console.warn('[Trade History] V2 매수체결 조회 실패:', err.message);
+        return [];
+      });
+      userCompleted = userCompleted.concat(buys);
+    }
 
     // year와 month 필터링
     if (year && month) {

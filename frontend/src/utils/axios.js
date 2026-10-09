@@ -57,6 +57,9 @@ apiClient.interceptors.request.use(
   }
 );
 
+// 동시에 여러 요청이 401 을 받아도 안내·이동은 한 번만
+let redirectingToLogin = false;
+
 // Response interceptor: 에러 처리
 apiClient.interceptors.response.use(
   (response) => response,
@@ -81,7 +84,8 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 || isOwnerMismatch || isAccountBlocked) {
       if (errorData?.code === 'SESSION_EXPIRED' || isOwnerMismatch || isAccountBlocked) {
         localStorage.removeItem('token');
-        if (window.location.pathname !== '/login') {
+        if (window.location.pathname !== '/login' && !redirectingToLogin) {
+          redirectingToLogin = true;
           alert(errorData?.error || '로그인이 만료되었습니다. 다시 로그인해주세요.');
           window.location.href = '/login';
         }
@@ -89,7 +93,8 @@ apiClient.interceptors.response.use(
         // 일반적인 인증 실패
         localStorage.removeItem('token');
         // 로그인 페이지로 리다이렉트 (단, 이미 로그인 페이지가 아닌 경우에만)
-        if (window.location.pathname !== '/login') {
+        if (window.location.pathname !== '/login' && !redirectingToLogin) {
+          redirectingToLogin = true;
           window.location.href = '/login';
         }
       }

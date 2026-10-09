@@ -23,6 +23,8 @@ const linkSx = {
 const Login = () => {
   const [searchParams] = useSearchParams();
   const justVerified = searchParams.get('verified') === '1';
+  const justReset = searchParams.get('reset') === '1';
+  const returnUrl = encodeURIComponent(`${window.location.origin}/login`);
   const [email, setEmail] = useState(searchParams.get('email') || '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -119,6 +121,12 @@ const Login = () => {
             </Alert>
           )}
 
+          {justReset && !error && (
+            <Alert severity="success" sx={{ mb: 2 }}>
+              비밀번호가 변경되었습니다. 새 비밀번호로 로그인하세요.
+            </Alert>
+          )}
+
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
@@ -169,12 +177,22 @@ const Login = () => {
 
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1.5 }}>
               <Link
-                href={authUrl(`/register?returnUrl=${encodeURIComponent(`${window.location.origin}/login`)}`)}
+                href={authUrl(`/register?returnUrl=${returnUrl}`)}
                 target="_blank"
                 rel="noopener noreferrer"
                 sx={linkSx}
               >
                 계정 만들기
+              </Link>
+              <Link
+                href={authUrl(
+                  `/forgot-password?returnUrl=${returnUrl}${email ? `&email=${encodeURIComponent(email)}` : ''}`
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={linkSx}
+              >
+                비밀번호 찾기
               </Link>
             </Box>
           </Box>

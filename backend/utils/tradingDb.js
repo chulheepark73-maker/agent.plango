@@ -51,6 +51,7 @@ const ADDED_COLUMNS = [
   ['broker_account_credentials', 'mock_app_secret', 'TEXT'],
   ['broker_account_credentials', 'mock_access_token', 'TEXT'],
   ['broker_account_credentials', 'mock_access_token_expires_at', 'TEXT'],
+  ['user_settings', 'holdings_rotate_sec', 'INTEGER NOT NULL DEFAULT 10'],
 ];
 for (const [table, column, ddl] of ADDED_COLUMNS) {
   const exists = db.prepare(`PRAGMA table_info("${table}")`).all().some((c) => c.name === column);

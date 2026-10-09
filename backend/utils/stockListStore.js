@@ -257,7 +257,8 @@ const getNXTStockCache = async () => {
       nxtStockCache = result.rows.map(row => ({
         stockCode: row.stock_code
       }));
-      nxtStockCacheTime = now;
+      // 빈 목록은 캐시하지 않음 (나중에 import 하면 바로 반영)
+      nxtStockCacheTime = nxtStockCache.length > 0 ? now : null;
     } catch (error) {
       console.error('[stockListStore] getNXTStockCache 오류:', error);
       nxtStockCache = [];

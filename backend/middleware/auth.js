@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { getPublicKey } = require('../services/centralClient');
+const { getPublicKey, getMe } = require('../services/centralClient');
 const { hasOwner, isOwner, isRegistered } = require('../utils/agentIdentity');
 const { isAccountBlocked, accountBlockMessage } = require('../utils/accountBlock');
 const { getAgentRevoked, NOT_REGISTERED_MESSAGE } = require('../utils/agentLock');
@@ -60,8 +60,50 @@ const revokeToken = (token, claims) => {
   revokedTokens.set(token, claims?.exp ? claims.exp * 1000 : now + 24 * 3600 * 1000);
 };
 
-/** 서명 검증 + 이 에이전트 사용자인지 확인 */
-const verifyAgentToken = async (token) => {
+/**
+ * 중앙 세션 확인 결과 캐시 (token → { at } 또는 { promise }).
+ * 중앙에서 세션이 닫히면(다른 곳 로그인·관리자 강제 종료·비밀번호 재설정) 최대 TTL 안에 여기서도 끊긴다.
+ * 중앙 장애·네트워크 오류는 막지 않고 TTL 동안 통과시킨다.
+ */
+const SESSION_CHECK_TTL_MS = 60 * 1000;
+const sessionChecks = new Map();
+
+const pruneSessionChecks = () => {
+  if (sessionChecks.size < 100) return;
+  const cutoff = Date.now() - SESSION_CHECK_TTL_MS;
+  for (const [t, v] of sessionChecks) if (v.at && v.at < cutoff) sessionChecks.delete(t);
+};
+
+const checkCentralSession = async (token, claims) => {
+  const cached = sessionChecks.get(token);
+  if (cached?.promise) return cached.promise;
+  if (cached && Date.now() - cached.at < SESSION_CHECK_TTL_MS) return undefined;
+
+  const promise = getMe(token).then(
+    () => {
+      sessionChecks.set(token, { at: Date.now() });
+    },
+    (error) => {
+      if (error.status === 401) {
+        sessionChecks.delete(token);
+        revokeToken(token, claims);
+        throw authError(
+          401,
+          error.data?.error || '세션이 종료되었습니다. 다시 로그인해주세요.',
+          'SESSION_EXPIRED'
+        );
+      }
+      console.warn('[인증] 중앙 세션 확인 실패(통과):', error.status, error.message);
+      sessionChecks.set(token, { at: Date.now() });
+    }
+  );
+  sessionChecks.set(token, { promise });
+  pruneSessionChecks();
+  return promise;
+};
+
+/** 서명 검증 + 이 에이전트 사용자인지 확인 (+ 중앙 세션 활성 확인) */
+const verifyAgentToken = async (token, { checkSession = true } = {}) => {
   if (token && revokedTokens.has(token)) {
     throw authError(401, '로그아웃된 토큰입니다. 다시 로그인해주세요.', 'SESSION_EXPIRED');
   }
@@ -75,20 +117,26 @@ const verifyAgentToken = async (token) => {
   if (isAccountBlocked()) {
     throw authError(403, accountBlockMessage(), 'ACCOUNT_BLOCKED');
   }
+  if (checkSession) await checkCentralSession(token, user);
   return user;
 };
 
-const authenticateToken = async (req, res, next) => {
+const authenticateWith = (options) => async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   try {
-    req.user = await verifyAgentToken(token);
+    req.user = await verifyAgentToken(token, options);
     req.token = token;
     next();
   } catch (error) {
     res.status(error.status || 403).json({ error: error.message, code: error.code });
   }
 };
+
+const authenticateToken = authenticateWith({ checkSession: true });
+
+/** 로그아웃용: 중앙 세션이 이미 닫혔어도 로컬 로그아웃은 처리한다 */
+const authenticateTokenWithoutSession = authenticateWith({ checkSession: false });
 
 /** 서버 미등록 상태에서도 열어 두는 API (app.use('/api') 기준 경로) */
 const UNREGISTERED_ALLOWED = [
@@ -112,6 +160,7 @@ const requireRegisteredAgent = (req, res, next) => {
 
 module.exports = {
   authenticateToken,
+  authenticateTokenWithoutSession,
   verifyAgentToken,
   verifyCentralSignature,
   revokeToken,

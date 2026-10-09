@@ -69,6 +69,14 @@ cp .env.example .env
 - `data/`(DB·agent.json), `log/` 는 실행파일 옆에 생긴다. 업데이트 시 실행파일과 `build/` 만 교체한다.
 - 실행파일은 빌드한 OS/CPU 전용이다 (리눅스 x64 에서 빌드 → 리눅스 x64 고객 서버).
 
+윈도우용은 윈도우 PC(Node 25.5+)에서 개발 서버를 끈 뒤:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
+```
+
+`release\plango-agent-<버전>-win-<arch>.zip` 이 만들어진다. 압축을 풀고 `.env.example` 을 `.env` 로 복사한 뒤 `plango-agent.exe` 를 실행한다.
+
 ## 프로젝트 구조
 
 ```

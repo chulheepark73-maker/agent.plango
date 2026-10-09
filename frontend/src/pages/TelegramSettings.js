@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Paper, Box, Typography, Alert, Button, Chip } from '@mui/material';
 import TelegramIcon from '@mui/icons-material/Telegram';
 import apiClient from '../utils/axios';
-import PageFrame from '../components/PageFrame';
+import PageFrame, { pageHeaderSx } from '../components/PageFrame';
 
 const TelegramSettings = () => {
   const [settings, setSettings] = useState({
@@ -76,7 +76,7 @@ const TelegramSettings = () => {
 
   return (
     <PageFrame>
-      <Paper sx={{ px: 2, py: 1.25, mb: 2 }}>
+      <Paper sx={pageHeaderSx}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <TelegramIcon sx={{ fontSize: '1.05rem' }} />
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>

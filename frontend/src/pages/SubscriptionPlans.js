@@ -19,9 +19,10 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import { Link as RouterLink } from 'react-router-dom';
 import apiClient from '../utils/axios';
-import PageFrame from '../components/PageFrame';
+import PageFrame, { pageHeaderSx } from '../components/PageFrame';
 
-const CURRENT_COLOR = '#f5a623';
+/** 라이트 모드는 흰 바탕 대비를 위해 진한 호박색 */
+const CURRENT_COLOR = (theme) => (theme.palette.mode === 'dark' ? '#f5a623' : '#b45309');
 
 /** 아직 신청할 수 없는 플랜 (서버에서도 막는다) */
 const DISABLED_PLAN_CODES = new Set([]);
@@ -250,7 +251,7 @@ const SubscriptionPlans = () => {
 
   return (
     <PageFrame>
-      <Paper sx={{ px: 2, py: 1.25, mb: 2 }}>
+      <Paper sx={pageHeaderSx}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <LocalOfferIcon sx={{ fontSize: '1.05rem' }} />
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
@@ -258,6 +259,32 @@ const SubscriptionPlans = () => {
           </Typography>
         </Box>
       </Paper>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+      {message && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setMessage(null)}>
+          {message}
+        </Alert>
+      )}
+
+      {me && me.registered === false && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" component={RouterLink} to="/server-registration">
+              서버등록
+            </Button>
+          }
+        >
+          이 서버가 PlanGo.Today 에 등록되지 않아 구독 혜택이 적용되지 않습니다(무료 한도 적용).
+          서버등록 메뉴에서 등록하세요.
+        </Alert>
+      )}
 
       <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start', flexWrap: { xs: 'wrap', lg: 'nowrap' } }}>
       <Box sx={{ flex: 1, minWidth: 0, width: { xs: '100%', lg: 'auto' } }}>
@@ -270,37 +297,12 @@ const SubscriptionPlans = () => {
           flexShrink: 0,
         }}
       >
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-            {error}
-          </Alert>
-        )}
-        {message && (
-          <Alert severity="success" sx={{ mb: 2 }} onClose={() => setMessage(null)}>
-            {message}
-          </Alert>
-        )}
-
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
             <CircularProgress size={28} />
           </Box>
         ) : (
           <>
-            {me && me.registered === false && (
-              <Alert
-                severity="warning"
-                sx={{ mb: 2 }}
-                action={
-                  <Button color="inherit" size="small" component={RouterLink} to="/server-registration">
-                    서버등록
-                  </Button>
-                }
-              >
-                이 서버가 PlanGo.Today 에 등록되지 않아 구독 혜택이 적용되지 않습니다(무료 한도 적용).
-                서버등록 메뉴에서 등록하세요.
-              </Alert>
-            )}
             <SectionTitle>현재 이용중인 서버구독</SectionTitle>
             <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>

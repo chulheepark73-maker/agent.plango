@@ -26,7 +26,8 @@ import {
   Chip,
   Radio,
 } from '@mui/material';
-import PageFrame from '../components/PageFrame';
+import PageFrame, { pageHeaderSx } from '../components/PageFrame';
+import SettingsIcon from '@mui/icons-material/Settings';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -38,9 +39,85 @@ import StarIcon from '@mui/icons-material/Star';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import UpdateIcon from '@mui/icons-material/Update';
 import SavingsIcon from '@mui/icons-material/Savings';
+import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 import apiClient from '../utils/axios';
 
 const TRADING_MODE_LABEL = { live: '실전투자', mock: '모의투자' };
+
+/** 알약형 입력 필드 (관심종목 무한매매 설정과 동일한 스타일) */
+const isDarkTheme = (theme) => theme.palette.mode === 'dark';
+const PILL_INPUT_SX = {
+  '& .MuiOutlinedInput-root': {
+    height: 32,
+    borderRadius: '20px',
+    bgcolor: (theme) => (isDarkTheme(theme) ? '#081120' : '#f6f8fa'),
+    '& fieldset': { borderColor: (theme) => (isDarkTheme(theme) ? '#1e2d45' : '#d0d7de') },
+    '&:hover fieldset': { borderColor: '#8b949e' },
+    '&.Mui-focused fieldset': { borderColor: '#58a6ff' },
+  },
+  '& input': {
+    fontSize: '0.8rem',
+    textAlign: 'right',
+    py: 0.5,
+    fontWeight: 600,
+    pr: 0.25,
+  },
+};
+
+const PillField = ({
+  label,
+  value,
+  onChange,
+  unit,
+  width = 150,
+  labelWidth,
+  type = 'text',
+  placeholder,
+  inputMode = 'numeric',
+  textAlign = 'right',
+  inputProps,
+  autoComplete,
+  endAdornment,
+}) => (
+  <Box display="flex" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+    <Typography
+      variant="body2"
+      sx={{ fontSize: '0.8rem', color: 'text.secondary', whiteSpace: 'nowrap', width: labelWidth }}
+    >
+      {label}
+    </Typography>
+    <TextField
+      type={type}
+      inputMode={inputMode}
+      size="small"
+      placeholder={placeholder}
+      autoComplete={autoComplete}
+      value={value}
+      onChange={onChange}
+      inputProps={inputProps}
+      InputProps={
+        unit || endAdornment
+          ? {
+              endAdornment: endAdornment || (
+                <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'text.secondary', ml: 0.5 }}>
+                  {unit}
+                </Typography>
+              ),
+            }
+          : undefined
+      }
+      sx={{
+        width,
+        ...PILL_INPUT_SX,
+        '& input': { ...PILL_INPUT_SX['& input'], textAlign },
+        '& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button': {
+          WebkitAppearance: 'none',
+          m: 0,
+        },
+      }}
+    />
+  </Box>
+);
 
 /** 키움 App Key/Secret 카드 (실전·모의 공용). 제목 옆 라디오로 사용할 쪽을 고른다 */
 const KiwoomCredentialsCard = ({
@@ -88,48 +165,63 @@ const KiwoomCredentialsCard = ({
             : '키움증권 개발자 포털에서 발급받은 App Key와 App Secret을 입력하세요.'}
         </Typography>
 
-        <TextField
-          fullWidth
-          label="App Key"
-          margin="normal"
-          autoComplete="off"
-          value={appKey || ''}
-          onChange={onAppKeyChange}
-          placeholder={`키움증권에서 발급받은 ${label} App Key를 입력하세요`}
-        />
+        <Box display="flex" flexDirection="column" gap={1.5}>
+          <PillField
+            label="App Key"
+            labelWidth={72}
+            width={420}
+            inputMode="text"
+            textAlign="left"
+            autoComplete="off"
+            value={appKey || ''}
+            onChange={onAppKeyChange}
+            placeholder={`키움증권에서 발급받은 ${label} App Key를 입력하세요`}
+          />
+          <Box>
+            <PillField
+              label="App Secret"
+              labelWidth={72}
+              width={420}
+              inputMode="text"
+              textAlign="left"
+              type={showSecret ? 'text' : 'password'}
+              autoComplete="new-password"
+              value={appSecret === '***' ? '' : appSecret || ''}
+              onChange={onAppSecretChange}
+              placeholder={
+                hasAppSecret
+                  ? '새로운 App Secret을 입력하거나 비워두세요'
+                  : `키움증권에서 발급받은 ${label} App Secret을 입력하세요`
+              }
+              endAdornment={
+                <InputAdornment position="end">
+                  <IconButton size="small" onClick={() => setShowSecret((v) => !v)} edge="end">
+                    {showSecret ? (
+                      <VisibilityOffIcon sx={{ fontSize: '1rem' }} />
+                    ) : (
+                      <VisibilityIcon sx={{ fontSize: '1rem' }} />
+                    )}
+                  </IconButton>
+                </InputAdornment>
+              }
+            />
+            {hasAppSecret && (!appSecret || appSecret === '***') && (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: 'block', mt: 0.5, ml: '78px' }}
+              >
+                기존 App Secret이 저장되어 있습니다. 변경하려면 새 값을 입력하세요.
+              </Typography>
+            )}
+          </Box>
+        </Box>
 
-        <TextField
-          fullWidth
-          label="App Secret"
-          margin="normal"
-          type={showSecret ? 'text' : 'password'}
-          autoComplete="new-password"
-          value={appSecret === '***' ? '' : appSecret || ''}
-          onChange={onAppSecretChange}
-          placeholder={
-            hasAppSecret
-              ? '새로운 App Secret을 입력하거나 비워두세요'
-              : `키움증권에서 발급받은 ${label} App Secret을 입력하세요`
-          }
-          helperText={
-            hasAppSecret && (!appSecret || appSecret === '***')
-              ? '기존 App Secret이 저장되어 있습니다. 변경하려면 새 값을 입력하세요.'
-              : ''
-          }
-          InputProps={{
-            endAdornment: (
-              <InputAdornment position="end">
-                <IconButton onClick={() => setShowSecret((v) => !v)} edge="end">
-                  {showSecret ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                </IconButton>
-              </InputAdornment>
-            ),
-          }}
-        />
-
-        <Button variant="contained" onClick={onSave} disabled={loading} sx={{ mt: 2 }}>
-          저장
-        </Button>
+        <Box display="flex" justifyContent="flex-end" sx={{ mt: 2 }}>
+          <Button variant="contained" onClick={onSave} disabled={loading}>
+            저장
+          </Button>
+        </Box>
       </CardContent>
     </Card>
   );
@@ -193,11 +285,38 @@ const Settings = () => {
   const [usHoldings, setUsHoldings] = useState([]);
   const [usAccountLoading, setUsAccountLoading] = useState(true);
   const [usDepositError, setUsDepositError] = useState(null);
+  const [holdingsRotateSec, setHoldingsRotateSec] = useState('10');
+
   useEffect(() => {
     fetchSettings();
     fetchAccountInfo();
     fetchUsAccountInfo();
+    apiClient
+      .get('/settings/user-settings')
+      .then(({ data }) => {
+        if (data?.holdingsRotateSec != null) setHoldingsRotateSec(String(data.holdingsRotateSec));
+      })
+      .catch(() => {});
   }, []);
+
+  const handleSaveDisplaySettings = async () => {
+    setLoading(true);
+    setMessage({ type: '', text: '' });
+    try {
+      const { data } = await apiClient.put('/settings/user-settings', {
+        holdingsRotateSec: Number(holdingsRotateSec),
+      });
+      setHoldingsRotateSec(String(data.holdingsRotateSec));
+      setMessage({ type: 'success', text: '디스플레이 설정이 저장되었습니다.' });
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.error || '디스플레이 설정 저장 중 오류가 발생했습니다.',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchSettings = async () => {
     try {
@@ -444,16 +563,6 @@ const Settings = () => {
     }
   };
 
-  const formatAmountWithWon = (value) => {
-    const num = Number(value || 0);
-    return `${num.toLocaleString('ko-KR')} 원`;
-  };
-
-  const formatAmountWithUsd = (value) => {
-    const num = Number(value || 0);
-    return `$${num.toLocaleString('en-US')}`;
-  };
-
   const handlePlanAmountChange = (field) => (e) => {
     const digits = String(e.target.value || '').replace(/[^0-9]/g, '');
     setSettings((prev) => ({
@@ -462,7 +571,7 @@ const Settings = () => {
     }));
   };
 
-  const handleSaveKrPlanStatus = async () => {
+  const handleSavePlanStatus = async () => {
     setLoading(true);
     setMessage({ type: '', text: '' });
 
@@ -471,37 +580,6 @@ const Settings = () => {
         week: settings.planWeek,
         month: settings.planMonth,
         year: settings.planYear,
-      });
-
-      setSettings((prev) => ({
-        ...prev,
-        planWeek: response.data.planWeek ?? prev.planWeek,
-        planMonth: response.data.planMonth ?? prev.planMonth,
-        planYear: response.data.planYear ?? prev.planYear,
-        planUsWeek: response.data.planUsWeek ?? prev.planUsWeek,
-        planUsMonth: response.data.planUsMonth ?? prev.planUsMonth,
-        planUsYear: response.data.planUsYear ?? prev.planUsYear,
-      }));
-      setMessage({
-        type: 'success',
-        text: response.data.message || 'KR 수익 목표가 저장되었습니다.',
-      });
-    } catch (error) {
-      setMessage({
-        type: 'error',
-        text: error.response?.data?.error || 'KR 수익 목표 저장 중 오류가 발생했습니다.',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSaveUsPlanStatus = async () => {
-    setLoading(true);
-    setMessage({ type: '', text: '' });
-
-    try {
-      const response = await apiClient.post('/settings/plan-status', {
         usWeek: settings.planUsWeek,
         usMonth: settings.planUsMonth,
         usYear: settings.planUsYear,
@@ -518,12 +596,12 @@ const Settings = () => {
       }));
       setMessage({
         type: 'success',
-        text: response.data.message || 'US 수익 목표가 저장되었습니다.',
+        text: response.data.message || '수익 목표가 저장되었습니다.',
       });
     } catch (error) {
       setMessage({
         type: 'error',
-        text: error.response?.data?.error || 'US 수익 목표 저장 중 오류가 발생했습니다.',
+        text: error.response?.data?.error || '수익 목표 저장 중 오류가 발생했습니다.',
       });
     } finally {
       setLoading(false);
@@ -836,10 +914,19 @@ const Settings = () => {
 
   return (
     <PageFrame>
+      <Paper sx={pageHeaderSx}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <SettingsIcon sx={{ fontSize: '1.05rem', color: '#ff9800' }} />
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            환경설정
+          </Typography>
+        </Box>
+      </Paper>
+
       {message.text && (
         <Alert
           severity={message.type === 'error' ? 'error' : 'success'}
-          sx={{ mb: 3 }}
+          sx={{ mb: 2 }}
           onClose={() => setMessage({ type: '', text: '' })}
         >
           {message.text}
@@ -1377,138 +1464,65 @@ const Settings = () => {
               )}
             </Paper>
 
-            {/* KR 주간/월간/년간 수익 목표설정 */}
+            {/* KR/US 주간/월간/년간 수익 목표설정 */}
             <Paper sx={{ p: 3 }}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: 1,
-                  mb: 2,
-                  minWidth: 0,
-                }}
-              >
-                <Typography
-                  variant="h6"
-                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, m: 0 }}
-                >
-                  <SavingsIcon sx={{ fontSize: '1.05rem' }} />
-                  KR 주간/월간/년간 수익 목표설정
-                </Typography>
-                <Typography component="span" variant="body2" color="text.secondary">
-                  예: 12,000,000 원 형식으로 입력 가능하며 숫자로 저장됩니다.
-                </Typography>
-              </Box>
+              {[
+                { market: 'KR', unit: '원', locale: 'ko-KR', fields: ['planWeek', 'planMonth', 'planYear'] },
+                { market: 'US', unit: '$', locale: 'en-US', fields: ['planUsWeek', 'planUsMonth', 'planUsYear'] },
+              ].map(({ market, unit, locale, fields }, idx) => (
+                <Box key={market} sx={{ mt: idx === 0 ? 0 : 3 }}>
+                  <Typography
+                    variant="h6"
+                    sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, mb: 1.5 }}
+                  >
+                    <SavingsIcon sx={{ fontSize: '1.05rem' }} />
+                    {market} 주간/월간/년간 수익 목표설정
+                  </Typography>
+                  <Box display="flex" alignItems="center" gap={3} flexWrap="wrap">
+                    {['주간', '월간', '년간'].map((label, i) => (
+                      <PillField
+                        key={fields[i]}
+                        label={label}
+                        value={Number(settings[fields[i]] || 0).toLocaleString(locale)}
+                        onChange={handlePlanAmountChange(fields[i])}
+                        unit={unit}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+              ))}
 
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
-                  gap: 2,
-                }}
-              >
-                <TextField
-                  fullWidth
-                  margin="normal"
-                  label="주간 목표금액"
-                  value={formatAmountWithWon(settings.planWeek)}
-                  onChange={handlePlanAmountChange('planWeek')}
-                  placeholder="예: 12,000,000 원"
-                />
-                <TextField
-                  fullWidth
-                  margin="normal"
-                  label="월간 목표금액"
-                  value={formatAmountWithWon(settings.planMonth)}
-                  onChange={handlePlanAmountChange('planMonth')}
-                  placeholder="예: 12,000,000 원"
-                />
-                <TextField
-                  fullWidth
-                  margin="normal"
-                  label="년간 목표금액"
-                  value={formatAmountWithWon(settings.planYear)}
-                  onChange={handlePlanAmountChange('planYear')}
-                  placeholder="예: 12,000,000 원"
-                />
+              <Box display="flex" justifyContent="flex-end" sx={{ mt: 2 }}>
+                <Button variant="contained" onClick={handleSavePlanStatus} disabled={loading}>
+                  저장
+                </Button>
               </Box>
-
-              <Button
-                variant="contained"
-                onClick={handleSaveKrPlanStatus}
-                disabled={loading}
-                sx={{ mt: 2 }}
-              >
-                저장
-              </Button>
             </Paper>
 
-            {/* US 주간/월간/년간 수익 목표설정 */}
+            {/* 디스플레이 설정 (user_settings.holdings_rotate_sec) */}
             <Paper sx={{ p: 3 }}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: 1,
-                  mb: 2,
-                  minWidth: 0,
-                }}
+              <Typography
+                variant="h6"
+                sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, mb: 1.5 }}
               >
-                <Typography
-                  variant="h6"
-                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, m: 0 }}
-                >
-                  <SavingsIcon sx={{ fontSize: '1.05rem' }} />
-                  US 주간/월간/년간 수익 목표설정
-                </Typography>
-                <Typography component="span" variant="body2" color="text.secondary">
-                  예: $12,000 형식으로 입력 가능하며 숫자로 저장됩니다.
-                </Typography>
+                <DisplaySettingsIcon sx={{ fontSize: '1.05rem' }} />
+                디스플레이 설정
+              </Typography>
+              <PillField
+                label="대시보드 보유종목 변경"
+                width={90}
+                unit="초"
+                value={holdingsRotateSec}
+                onChange={(e) => setHoldingsRotateSec(e.target.value.replace(/[^0-9]/g, '').slice(0, 3))}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                보유종목 카드가 여러 페이지일 때 다음 페이지로 넘어가는 간격입니다. (3~600초)
+              </Typography>
+              <Box display="flex" justifyContent="flex-end" sx={{ mt: 2 }}>
+                <Button variant="contained" onClick={handleSaveDisplaySettings} disabled={loading}>
+                  저장
+                </Button>
               </Box>
-
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
-                  gap: 2,
-                }}
-              >
-                <TextField
-                  fullWidth
-                  margin="normal"
-                  label="주간 목표금액"
-                  value={formatAmountWithUsd(settings.planUsWeek)}
-                  onChange={handlePlanAmountChange('planUsWeek')}
-                  placeholder="예: $12,000"
-                />
-                <TextField
-                  fullWidth
-                  margin="normal"
-                  label="월간 목표금액"
-                  value={formatAmountWithUsd(settings.planUsMonth)}
-                  onChange={handlePlanAmountChange('planUsMonth')}
-                  placeholder="예: $12,000"
-                />
-                <TextField
-                  fullWidth
-                  margin="normal"
-                  label="년간 목표금액"
-                  value={formatAmountWithUsd(settings.planUsYear)}
-                  onChange={handlePlanAmountChange('planUsYear')}
-                  placeholder="예: $12,000"
-                />
-              </Box>
-
-              <Button
-                variant="contained"
-                onClick={handleSaveUsPlanStatus}
-                disabled={loading}
-                sx={{ mt: 2 }}
-              >
-                저장
-              </Button>
             </Paper>
 
             {/* 버전 정보 */}
@@ -1702,10 +1716,11 @@ const Settings = () => {
               </Alert>
             )}
 
-            <TextField
-              fullWidth
+            <PillField
               label="계좌번호"
-              margin="normal"
+              width={150}
+              inputMode="text"
+              textAlign="left"
               value={settings.kiwoomAccountNo || ''}
               onChange={(e) => setSettings({ ...settings, kiwoomAccountNo: e.target.value })}
               placeholder="예: 12345678-01"
@@ -1719,16 +1734,12 @@ const Settings = () => {
               <CreditCardIcon sx={{ fontSize: '1.05rem' }} />
               KR 수수료·거래세
             </Typography>
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' },
-                gap: 2,
-                mt: 1,
-              }}
-            >
-              <TextField
-                label="매수 수수료 (%)"
+            <Box display="flex" alignItems="center" gap={3} flexWrap="wrap" sx={{ mt: 1 }}>
+              <PillField
+                label="매수"
+                unit="%"
+                width={85}
+                inputMode="decimal"
                 type="number"
                 inputProps={{ step: '0.0001', min: 0 }}
                 value={
@@ -1744,8 +1755,11 @@ const Settings = () => {
                   });
                 }}
               />
-              <TextField
-                label="매도 수수료 (%)"
+              <PillField
+                label="매도"
+                unit="%"
+                width={85}
+                inputMode="decimal"
                 type="number"
                 inputProps={{ step: '0.0001', min: 0 }}
                 value={
@@ -1761,8 +1775,11 @@ const Settings = () => {
                   });
                 }}
               />
-              <TextField
-                label="증권거래세 (%)"
+              <PillField
+                label="거래세"
+                unit="%"
+                width={85}
+                inputMode="decimal"
                 type="number"
                 inputProps={{ step: '0.01', min: 0 }}
                 value={
@@ -1788,16 +1805,12 @@ const Settings = () => {
               <CreditCardIcon sx={{ fontSize: '1.05rem' }} />
               US 수수료·거래세
             </Typography>
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' },
-                gap: 2,
-                mt: 1,
-              }}
-            >
-              <TextField
-                label="매수 수수료 (%)"
+            <Box display="flex" alignItems="center" gap={3} flexWrap="wrap" sx={{ mt: 1 }}>
+              <PillField
+                label="매수"
+                unit="%"
+                width={85}
+                inputMode="decimal"
                 type="number"
                 inputProps={{ step: '0.0001', min: 0 }}
                 value={
@@ -1813,8 +1826,11 @@ const Settings = () => {
                   });
                 }}
               />
-              <TextField
-                label="매도 수수료 (%)"
+              <PillField
+                label="매도"
+                unit="%"
+                width={85}
+                inputMode="decimal"
                 type="number"
                 inputProps={{ step: '0.0001', min: 0 }}
                 value={
@@ -1830,8 +1846,11 @@ const Settings = () => {
                   });
                 }}
               />
-              <TextField
-                label="거래세 (%)"
+              <PillField
+                label="거래세"
+                unit="%"
+                width={85}
+                inputMode="decimal"
                 type="number"
                 inputProps={{ step: '0.0001', min: 0 }}
                 value={
@@ -1849,6 +1868,7 @@ const Settings = () => {
               />
             </Box>
 
+            <Box display="flex" justifyContent="flex-end" sx={{ mt: 2 }}>
             <Button
               variant="contained"
               onClick={async () => {
@@ -1890,10 +1910,10 @@ const Settings = () => {
                 }
               }}
               disabled={loading}
-              sx={{ mt: 2 }}
             >
               저장
             </Button>
+            </Box>
           </CardContent>
         </Card>
 
@@ -1911,22 +1931,26 @@ const Settings = () => {
               KRX/US 관심종목 이름 설정
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              자동매매 Ver.2 관심종목1 ~ 관심종목8 이름을 설정합니다.
+              자동매매 Ver.2 관심종목 그룹1 ~ 그룹8 의 이름을 설정합니다.
             </Typography>
 
             <Box
               sx={{
                 display: 'grid',
-                gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                gap: 2,
+                gridTemplateColumns: 'repeat(2, max-content)',
+                columnGap: 3,
+                rowGap: 1.5,
+                alignItems: 'center',
               }}
             >
               {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-                <TextField
+                <PillField
                   key={n}
-                  fullWidth
-                  margin="normal"
-                  label={`관심종목${n}`}
+                  label={`그룹${n}`}
+                  labelWidth={36}
+                  width={150}
+                  inputMode="text"
+                  textAlign="left"
                   value={settings[`groupName${n}`] || ''}
                   inputProps={{ maxLength: 50 }}
                   onChange={(e) => {
@@ -1940,14 +1964,11 @@ const Settings = () => {
               ))}
             </Box>
 
-            <Button
-              variant="contained"
-              onClick={handleSaveGroupNames}
-              disabled={loading}
-              sx={{ mt: 2 }}
-            >
-              이름 저장
-            </Button>
+            <Box display="flex" justifyContent="flex-end" sx={{ mt: 2 }}>
+              <Button variant="contained" onClick={handleSaveGroupNames} disabled={loading}>
+                이름 저장
+              </Button>
+            </Box>
           </CardContent>
         </Card>
 
@@ -1966,7 +1987,7 @@ const Settings = () => {
                   KRX 종목명 업데이트
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                  키움증권의 KRX종목 목록을 가져와 종목명을 업데이트합니다 (NXT은 import 작업필요).
+                  키움증권의 KRX종목 목록을 가져와 종목명과 NXT 거래가능 종목을 업데이트합니다.
                 </Typography>
                 <Button
                   variant="outlined"
@@ -1975,11 +1996,15 @@ const Settings = () => {
                     try {
                       setMessage({ type: '', text: '' });
                       setLoading(true);
-                      await apiClient.post('/watchlist-v2/update-stock-list');
+                      const { data } = await apiClient.post('/watchlist-v2/update-stock-list');
+                      const counts = [
+                        data?.totalCount != null && `KRX ${Number(data.totalCount).toLocaleString()}건`,
+                        data?.nxtCount > 0 && `NXT ${Number(data.nxtCount).toLocaleString()}건`,
+                      ].filter(Boolean).join(', ');
                       setStockUpdateResultDialog({
                         open: true,
                         type: 'success',
-                        text: '종목 목록이 업데이트되었습니다.',
+                        text: `종목 목록이 업데이트되었습니다.${counts ? ` (${counts})` : ''}`,
                       });
                     } catch (error) {
                       console.error('[종목 목록 업데이트] 실패:', error);

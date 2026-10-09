@@ -49,6 +49,21 @@ const countWatchlistV2 = async (userId) => {
   return result.rows[0]?.cnt || 0;
 };
 
+/** 그룹별 등록 종목 수 { [groupNo]: count } */
+const countWatchlistV2ByGroup = async (userId) => {
+  await ensureTradingV2Tables();
+  const result = await pool.query(
+    'SELECT group_no, COUNT(*) AS cnt FROM watchlist_v2 WHERE user_id = $1 GROUP BY group_no',
+    [String(userId)]
+  );
+  const counts = {};
+  for (const row of result.rows) {
+    const n = normalizeGroupNo(row.group_no);
+    counts[n] = (counts[n] || 0) + Number(row.cnt || 0);
+  }
+  return counts;
+};
+
 const assertCanAddWatchlistV2 = async (userId) => {
   const limits = await getUserPlanLimits(userId);
   if (limits.maxWatchlist == null) return limits;
@@ -231,5 +246,6 @@ module.exports = {
   addWatchlistV2Item,
   removeWatchlistV2Item,
   countWatchlistV2,
+  countWatchlistV2ByGroup,
   assertCanAddWatchlistV2,
 };

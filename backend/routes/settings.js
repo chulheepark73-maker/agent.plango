@@ -10,6 +10,9 @@ const pool = require('../utils/tradingDb');
 const {
   getOrCreateUserSettings,
   updateUserSettings,
+  isValidHoldingsRotateSec,
+  HOLDINGS_ROTATE_SEC_MIN,
+  HOLDINGS_ROTATE_SEC_MAX,
 } = require('../utils/userSettingsStore');
 const { getSubscriptionSummaryForUser } = require('../utils/subscriptionStore');
 const {
@@ -295,6 +298,14 @@ router.put('/user-settings', authenticateToken, async (req, res) => {
     if (req.body.theme !== undefined) patch.theme = req.body.theme;
     if (req.body.priceRefreshInterval !== undefined) {
       patch.priceRefreshInterval = req.body.priceRefreshInterval;
+    }
+    if (req.body.holdingsRotateSec !== undefined) {
+      if (!isValidHoldingsRotateSec(req.body.holdingsRotateSec)) {
+        return res.status(400).json({
+          error: `보유종목 변경 간격은 ${HOLDINGS_ROTATE_SEC_MIN}~${HOLDINGS_ROTATE_SEC_MAX}초 사이 정수로 입력해주세요.`,
+        });
+      }
+      patch.holdingsRotateSec = Number(req.body.holdingsRotateSec);
     }
     for (let n = 1; n <= 8; n += 1) {
       const key = `groupName${n}`;

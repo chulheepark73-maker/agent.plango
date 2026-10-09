@@ -9,9 +9,15 @@ const {
   listWatchlistV2,
   addWatchlistV2Item,
   removeWatchlistV2Item,
+  countWatchlistV2ByGroup,
 } = require('../utils/watchlistV2Store');
 const { ensureTradingV2Tables } = require('../utils/tradingV2Store');
-const { isNXTStock, writeStockListFile, searchStockByName } = require('../utils/stockListStore');
+const {
+  isNXTStock,
+  writeStockListFile,
+  writeStockListNxtFile,
+  searchStockByName,
+} = require('../utils/stockListStore');
 const { isEtfLikeMrktTp } = require('../utils/krMrktTp');
 const { getKiwoomInfo, validateKiwoomInfo, normalizeStockCode, createStockCodeMap } = require('../utils/kiwoomUtils');
 const { extractPriceData, isKRXSessionOpen, isNXTTradingHours } = require('../utils/stockUtils');
@@ -68,14 +74,21 @@ router.post('/update-stock-list', async (req, res) => {
     );
     await writeStockListFile(krxStocks);
 
+    // nxtEnable 필드가 하나도 없으면(응답 형식 변경 등) 기존 NXT 목록 유지
+    const nxtStocks = krxStocks.filter((s) => s.nxtEnable);
+    if (nxtStocks.length > 0) {
+      await writeStockListNxtFile(nxtStocks);
+    }
+
     const etfCount = krxStocks.filter((s) => isEtfLikeMrktTp(s.mrktTp)).length;
     console.log(
-      `[국내주식] 종목 목록 업데이트 완료: KRX ${krxStocks.length}건 (ETF/ETN ${etfCount}건)`
+      `[국내주식] 종목 목록 업데이트 완료: KRX ${krxStocks.length}건 (ETF/ETN ${etfCount}건, NXT ${nxtStocks.length}건)`
     );
     res.json({
       message: '종목 목록이 업데이트되었습니다.',
       totalCount: krxStocks.length,
       etfEtnCount: etfCount,
+      nxtCount: nxtStocks.length,
     });
   } catch (error) {
     console.error('[국내주식] 종목 목록 업데이트 실패:', error);
@@ -136,6 +149,15 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('[watchlist-v2] 목록 실패:', error);
     res.status(500).json({ error: error.message || '관심종목 V2 목록 조회 실패' });
+  }
+});
+
+router.get('/group-counts', async (req, res) => {
+  try {
+    res.json(await countWatchlistV2ByGroup(req.user.userId));
+  } catch (error) {
+    console.error('[watchlist-v2] 그룹별 종목 수 조회 실패:', error);
+    res.status(500).json({ error: error.message || '그룹별 종목 수 조회 실패' });
   }
 });
 

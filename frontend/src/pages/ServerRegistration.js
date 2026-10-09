@@ -17,7 +17,7 @@ import {
 } from '@mui/material';
 import DnsIcon from '@mui/icons-material/Dns';
 import apiClient from '../utils/axios';
-import PageFrame from '../components/PageFrame';
+import PageFrame, { pageHeaderSx } from '../components/PageFrame';
 import { formatKstDateTime } from '../utils/formatUtils';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -62,7 +62,7 @@ const ServerRegistration = () => {
 
   return (
     <PageFrame>
-      <Paper sx={{ px: 2, py: 1.25, mb: 2 }}>
+      <Paper sx={pageHeaderSx}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <DnsIcon sx={{ fontSize: '1.05rem', color: '#4fc3f7' }} />
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>

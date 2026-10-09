@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS "user_settings" (
   "group_name6" TEXT NOT NULL DEFAULT '제목없음',
   "group_name7" TEXT NOT NULL DEFAULT '제목없음',
   "group_name8" TEXT NOT NULL DEFAULT '제목없음',
+  "holdings_rotate_sec" INTEGER NOT NULL DEFAULT 10,
   PRIMARY KEY ("user_id")
 );
 

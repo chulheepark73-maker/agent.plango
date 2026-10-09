@@ -41,7 +41,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import apiClient from '../utils/axios';
-import PageFrame from '../components/PageFrame';
+import PageFrame, { pageHeaderSx } from '../components/PageFrame';
 import { useAuth } from '../contexts/AuthContext';
 import { formatNumber, formatKstDateTime } from '../utils/formatUtils';
 
@@ -85,42 +85,46 @@ const compactFieldSx = { width: 140, flex: '0 0 auto' };
 
 const indicatorTabTitleFont = '1rem';
 const indicatorTabBodyFont = '0.8125rem';
-/** 다크 테마용 달력 아이콘 (네이티브 date picker indicator 대체) */
-const tradeDateCalendarIcon = `url("data:image/svg+xml,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="#e6edf3"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm0 16H5V10h14v10ZM9 14H7v-2h2v2Zm4 0h-2v-2h2v2Zm4 0h-2v-2h2v2Zm-8 4H7v-2h2v2Zm4 0h-2v-2h2v2Zm4 0h-2v-2h2v2Z"/></svg>'
+/** 달력 아이콘 (네이티브 date picker indicator 대체) */
+const tradeDateCalendarIcon = (fill) => `url("data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="${fill}"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm0 16H5V10h14v10ZM9 14H7v-2h2v2Zm4 0h-2v-2h2v2Zm4 0h-2v-2h2v2Zm-8 4H7v-2h2v2Zm4 0h-2v-2h2v2Zm4 0h-2v-2h2v2Z"/></svg>`
 )}")`;
-const tradeDateFieldSx = {
-  width: 160,
-  colorScheme: 'light',
-  '& .MuiOutlinedInput-root': {
+const tradeDateFieldSx = (theme) => {
+  const textColor = theme.palette.mode === 'dark' ? '#e6edf3' : theme.palette.text.primary;
+  const iconColor = theme.palette.mode === 'dark' ? '#e6edf3' : theme.palette.text.secondary;
+  return {
+    width: 160,
     colorScheme: 'light',
-  },
-  '& .MuiInputBase-input': {
-    fontSize: indicatorTabBodyFont,
-    color: '#e6edf3',
-    colorScheme: 'light',
-    '&::-webkit-calendar-picker-indicator': {
-      WebkitAppearance: 'none',
-      appearance: 'none',
-      backgroundColor: 'transparent',
-      backgroundImage: tradeDateCalendarIcon,
-      backgroundRepeat: 'no-repeat',
-      backgroundPosition: 'center',
-      backgroundSize: '18px 18px',
-      width: '22px',
-      height: '22px',
-      cursor: 'pointer',
-      filter: 'none',
-      opacity: 1,
+    '& .MuiOutlinedInput-root': {
+      colorScheme: 'light',
     },
-    '&::-webkit-datetime-edit': { color: '#e6edf3' },
-    '&::-webkit-datetime-edit-fields-wrapper': { color: '#e6edf3' },
-    '&::-webkit-datetime-edit-text': { color: '#e6edf3' },
-    '&::-webkit-datetime-edit-month-field': { color: '#e6edf3' },
-    '&::-webkit-datetime-edit-day-field': { color: '#e6edf3' },
-    '&::-webkit-datetime-edit-year-field': { color: '#e6edf3' },
-  },
-  '& .MuiInputLabel-root': { fontSize: indicatorTabBodyFont },
+    '& .MuiInputBase-input': {
+      fontSize: indicatorTabBodyFont,
+      color: textColor,
+      colorScheme: 'light',
+      '&::-webkit-calendar-picker-indicator': {
+        WebkitAppearance: 'none',
+        appearance: 'none',
+        backgroundColor: 'transparent',
+        backgroundImage: tradeDateCalendarIcon(iconColor),
+        backgroundRepeat: 'no-repeat',
+        backgroundPosition: 'center',
+        backgroundSize: '18px 18px',
+        width: '22px',
+        height: '22px',
+        cursor: 'pointer',
+        filter: 'none',
+        opacity: 1,
+      },
+      '&::-webkit-datetime-edit': { color: textColor },
+      '&::-webkit-datetime-edit-fields-wrapper': { color: textColor },
+      '&::-webkit-datetime-edit-text': { color: textColor },
+      '&::-webkit-datetime-edit-month-field': { color: textColor },
+      '&::-webkit-datetime-edit-day-field': { color: textColor },
+      '&::-webkit-datetime-edit-year-field': { color: textColor },
+    },
+    '& .MuiInputLabel-root': { fontSize: indicatorTabBodyFont },
+  };
 };
 const indicatorTabTableSx = {
   '& .MuiTableCell-root': { fontSize: indicatorTabBodyFont },
@@ -578,13 +582,7 @@ const IndicatorTrading = () => {
 
   return (
     <PageFrame>
-      {message.text && (
-        <Alert severity={message.type || 'info'} sx={{ mb: 2 }} onClose={() => setMessage({ type: '', text: '' })}>
-          {message.text}
-        </Alert>
-      )}
-
-      <Paper sx={{ px: 2, py: 1.25, mb: 2 }}>
+      <Paper sx={pageHeaderSx}>
         <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75 }}>
           <TuneIcon sx={{ fontSize: '1.05rem', color: '#ffeb3b' }} />
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
@@ -650,6 +648,12 @@ const IndicatorTrading = () => {
           </Typography>
         )}
       </Paper>
+
+      {message.text && (
+        <Alert severity={message.type || 'info'} sx={{ mb: 2 }} onClose={() => setMessage({ type: '', text: '' })}>
+          {message.text}
+        </Alert>
+      )}
 
       <Dialog
         open={!!confirmAction}
@@ -828,7 +832,7 @@ const IndicatorTrading = () => {
                     width: 140,
                     '& input::-webkit-calendar-picker-indicator': {
                       cursor: 'pointer',
-                      filter: 'invert(1)',
+                      filter: (theme) => (theme.palette.mode === 'dark' ? 'invert(1)' : 'none'),
                       opacity: 1,
                     },
                   }}
@@ -849,7 +853,7 @@ const IndicatorTrading = () => {
                     width: 140,
                     '& input::-webkit-calendar-picker-indicator': {
                       cursor: 'pointer',
-                      filter: 'invert(1)',
+                      filter: (theme) => (theme.palette.mode === 'dark' ? 'invert(1)' : 'none'),
                       opacity: 1,
                     },
                   }}

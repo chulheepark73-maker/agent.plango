@@ -271,6 +271,7 @@ class KiwoomAPI {
               stockCode,
               stockName,
               mrktTp: String(mrktTp),
+              nxtEnable: String(item.nxtEnable || item.nxt_enable || '').toUpperCase() === 'Y',
             });
           }
         }

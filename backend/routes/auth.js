@@ -7,7 +7,12 @@ const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const central = require('../services/centralClient');
-const { authenticateToken, verifyCentralSignature, revokeToken } = require('../middleware/auth');
+const {
+  authenticateToken,
+  authenticateTokenWithoutSession,
+  verifyCentralSignature,
+  revokeToken,
+} = require('../middleware/auth');
 const {
   loadAgentIdentity,
   saveAgentIdentity,
@@ -208,13 +213,17 @@ router.post(
   }
 );
 
-router.post('/logout', authenticateToken, async (req, res) => {
+router.post('/logout', authenticateTokenWithoutSession, async (req, res) => {
   logLogin('LOGOUT', req.user.userId, req.user.username, getClientIp(req), true, '', resolveLoginClient(req));
   revokeToken(req.token, req.user);
   try {
     await central.logout(req.token);
   } catch (error) {
-    console.warn('[로그아웃] 중앙 로그아웃 실패:', error.message);
+    if (error.status === 401) {
+      console.log('[로그아웃] 중앙 세션은 이미 종료됨');
+    } else {
+      console.warn('[로그아웃] 중앙 로그아웃 실패:', error.message);
+    }
   }
   res.json({ message: '로그아웃되었습니다.' });
 });

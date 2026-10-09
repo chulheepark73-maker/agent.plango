@@ -102,7 +102,9 @@ const toFeeRates = (s) => ({
 
 const isUsRow = (r) => String(r.stockMarket || '').toUpperCase() === 'US';
 
-const SectionTitle = ({ icon: Icon, children, right }) => (
+const PREVIEW_COUNT = 7;
+
+const SectionTitle = ({ icon: Icon, children, right, note }) => (
   <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
     <Typography
       variant="h6"
@@ -110,6 +112,21 @@ const SectionTitle = ({ icon: Icon, children, right }) => (
     >
       <Icon sx={{ fontSize: '1rem', color: 'text.secondary' }} />
       {children}
+      {note && (
+        <Box
+          component="span"
+          sx={{
+            fontSize: '0.75rem',
+            fontWeight: 400,
+            color: 'text.secondary',
+            alignSelf: 'flex-end',
+            pb: '2px',
+            ml: 0.4,
+          }}
+        >
+          {note}
+        </Box>
+      )}
     </Typography>
     {right}
   </Box>
@@ -260,11 +277,11 @@ const Report = () => {
       map.set(key, prev);
     });
     const rateOf = (s) => (s.invested > 0 ? s.profit / s.invested : 0);
-    return [...map.values()].sort((a, b) => rateOf(b) - rateOf(a)).slice(0, 7);
+    return [...map.values()].sort((a, b) => rateOf(b) - rateOf(a)).slice(0, PREVIEW_COUNT);
   }, [periodTrades]);
 
   const recent = useMemo(
-    () => [...periodTrades].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 7),
+    () => [...periodTrades].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, PREVIEW_COUNT),
     [periodTrades]
   );
 
@@ -465,7 +482,9 @@ const Report = () => {
           <Grid container spacing={1.5}>
             <Grid item xs={12} md={6}>
               <Paper elevation={0} sx={paperSx}>
-                <SectionTitle icon={LeaderboardIcon}>종목별 성과</SectionTitle>
+                <SectionTitle icon={LeaderboardIcon} note={`최신 ${PREVIEW_COUNT}개만 표시합니다.`}>
+                  종목별 성과
+                </SectionTitle>
                 <TableContainer sx={{ maxHeight: 420 }}>
                   <Table size="small" stickyHeader>
                     <TableHead>
@@ -524,7 +543,9 @@ const Report = () => {
             </Grid>
             <Grid item xs={12} md={6}>
               <Paper elevation={0} sx={paperSx}>
-                <SectionTitle icon={ReceiptLongIcon}>최근 거래</SectionTitle>
+                <SectionTitle icon={ReceiptLongIcon} note={`최신 ${PREVIEW_COUNT}개만 표시합니다.`}>
+                  최근 거래
+                </SectionTitle>
                 <TableContainer sx={{ maxHeight: 420 }}>
                   <Table size="small" stickyHeader>
                     <TableHead>

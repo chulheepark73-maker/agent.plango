@@ -39,6 +39,18 @@ const readStoredMode = () => {
   }
 };
 
+/** 경고·오류 알림: 대시보드 오류 메시지와 같은 호박색 테두리 스타일로 통일 */
+const noticeAlertOverrides = (isDark) => {
+  const fg = isDark ? '#e3b341' : '#9a6700';
+  const notice = {
+    backgroundColor: isDark ? 'rgba(187, 128, 9, 0.12)' : 'rgba(154, 103, 0, 0.1)',
+    color: fg,
+    border: `1px solid ${isDark ? 'rgba(187, 128, 9, 0.35)' : 'rgba(154, 103, 0, 0.35)'}`,
+    '& .MuiAlert-icon': { color: fg },
+  };
+  return { styleOverrides: { standardWarning: notice, standardError: notice } };
+};
+
 const createAppTheme = (mode) => {
   const isDark = mode !== 'white';
 
@@ -102,6 +114,7 @@ const createAppTheme = (mode) => {
             root: { borderColor: '#1e2d45' },
           },
         },
+        MuiAlert: noticeAlertOverrides(true),
       },
     });
   }
@@ -165,6 +178,7 @@ const createAppTheme = (mode) => {
           root: { borderColor: '#d0d7de' },
         },
       },
+      MuiAlert: noticeAlertOverrides(false),
     },
   });
 };

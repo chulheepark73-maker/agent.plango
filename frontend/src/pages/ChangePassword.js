@@ -3,7 +3,7 @@ import { Paper, Box, Typography, Alert, TextField, Button } from '@mui/material'
 import LockResetIcon from '@mui/icons-material/LockReset';
 import LockIcon from '@mui/icons-material/Lock';
 import apiClient from '../utils/axios';
-import PageFrame from '../components/PageFrame';
+import PageFrame, { pageHeaderSx } from '../components/PageFrame';
 
 const MIN_LENGTH = 6;
 
@@ -68,7 +68,7 @@ const ChangePassword = () => {
 
   return (
     <PageFrame>
-      <Paper sx={{ px: 2, py: 1.25, mb: 2 }}>
+      <Paper sx={pageHeaderSx}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <LockResetIcon sx={{ fontSize: '1.05rem' }} />
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>

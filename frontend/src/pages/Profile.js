@@ -3,7 +3,7 @@ import { Paper, Box, Typography, Alert, TextField, Button } from '@mui/material'
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
 import LockIcon from '@mui/icons-material/Lock';
 import apiClient from '../utils/axios';
-import PageFrame from '../components/PageFrame';
+import PageFrame, { pageHeaderSx } from '../components/PageFrame';
 import { useAuth } from '../contexts/AuthContext';
 
 const PHONE_RE = /^01[0-9]{9}$/;
@@ -69,7 +69,7 @@ const Profile = () => {
 
   return (
     <PageFrame>
-      <Paper sx={{ px: 2, py: 1.25, mb: 2 }}>
+      <Paper sx={pageHeaderSx}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <ManageAccountsIcon sx={{ fontSize: '1.05rem' }} />
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>

@@ -4,6 +4,14 @@ const DEFAULT_GROUP_NAME = '제목없음';
 const DEFAULT_THEME = 'dark';
 const DEFAULT_PRICE_REFRESH_INTERVAL = 5;
 const GROUP_NAME_COUNT = 8;
+const DEFAULT_HOLDINGS_ROTATE_SEC = 10;
+const HOLDINGS_ROTATE_SEC_MIN = 3;
+const HOLDINGS_ROTATE_SEC_MAX = 600;
+
+const isValidHoldingsRotateSec = (value) => {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= HOLDINGS_ROTATE_SEC_MIN && n <= HOLDINGS_ROTATE_SEC_MAX;
+};
 
 const groupNameCol = (n) => `group_name${n}`;
 const groupNameKey = (n) => `groupName${n}`;
@@ -42,6 +50,9 @@ const mapRow = (row) => {
       row.price_refresh_interval != null
         ? Number(row.price_refresh_interval)
         : DEFAULT_PRICE_REFRESH_INTERVAL,
+    holdingsRotateSec: isValidHoldingsRotateSec(row.holdings_rotate_sec)
+      ? Number(row.holdings_rotate_sec)
+      : DEFAULT_HOLDINGS_ROTATE_SEC,
     createdAt: row.created_at ? row.created_at.toISOString() : null,
     updatedAt: row.updated_at ? row.updated_at.toISOString() : null,
   };
@@ -97,10 +108,16 @@ const updateUserSettings = async (userId, patch = {}) => {
       ? normalizePriceRefreshInterval(patch.priceRefreshInterval)
       : row.price_refresh_interval;
 
+  const holdingsRotateSec =
+    patch.holdingsRotateSec !== undefined && isValidHoldingsRotateSec(patch.holdingsRotateSec)
+      ? Number(patch.holdingsRotateSec)
+      : row.holdings_rotate_sec;
+
   const setClauses = [
     'theme = $2',
     ...Array.from({ length: GROUP_NAME_COUNT }, (_, i) => `${groupNameCol(i + 1)} = $${i + 3}`),
     `price_refresh_interval = $${GROUP_NAME_COUNT + 3}`,
+    `holdings_rotate_sec = $${GROUP_NAME_COUNT + 4}`,
     'updated_at = CURRENT_TIMESTAMP',
   ];
 
@@ -109,7 +126,7 @@ const updateUserSettings = async (userId, patch = {}) => {
        ${setClauses.join(',\n       ')}
      WHERE user_id = $1
      RETURNING *`,
-    [id, theme, ...groupNames, priceRefreshInterval]
+    [id, theme, ...groupNames, priceRefreshInterval, holdingsRotateSec]
   );
 
   return mapRow(result.rows[0]);
@@ -123,4 +140,7 @@ module.exports = {
   DEFAULT_THEME,
   DEFAULT_PRICE_REFRESH_INTERVAL,
   GROUP_NAME_COUNT,
+  HOLDINGS_ROTATE_SEC_MIN,
+  HOLDINGS_ROTATE_SEC_MAX,
+  isValidHoldingsRotateSec,
 };

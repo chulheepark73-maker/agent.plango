@@ -1,6 +1,6 @@
 import React from 'react';
 import { Paper, Typography, Box } from '@mui/material';
-import PageFrame from '../components/PageFrame';
+import PageFrame, { pageHeaderSx } from '../components/PageFrame';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import Watchlist from './Watchlist';
 import MarketSessionStatusBar from '../components/MarketSessionStatusBar';
@@ -14,7 +14,7 @@ import MarketSessionStatusBar from '../components/MarketSessionStatusBar';
 const TradingV21 = () => {
   return (
     <PageFrame>
-      <Paper sx={{ px: 2, py: 1.25, mb: 2 }}>
+      <Paper sx={pageHeaderSx}>
         <Box
           sx={{
             display: 'flex',

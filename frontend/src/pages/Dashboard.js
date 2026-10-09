@@ -48,7 +48,7 @@ import StockLogo from '../components/StockLogo';
 import FlagIcon from '../components/FlagIcon';
 import LiquidateDialog from '../components/LiquidateDialog';
 import MarketSessionStatusBar from '../components/MarketSessionStatusBar';
-import PageFrame from '../components/PageFrame';
+import PageFrame, { pageHeaderSx } from '../components/PageFrame';
 import { isUsMarket } from '../utils/marketUtils';
 
 /** Trading V2 plan → 차트 매수라인 / B·S 마커 (분할매매만) */
@@ -227,10 +227,31 @@ const formatOrderPrice = (item) => {
   if (str === '-') return '-';
   return isUsHoldingCode(item.stockCode, item.stockMarket) ? `$${str}` : `${str}원`;
 };
-const HOLDINGS_ROTATE_MS = 10000;
+const DEFAULT_HOLDINGS_ROTATE_MS = 10000;
 
 const dashInnerCardBg = (theme) =>
   theme.palette.mode === 'dark' ? '#122239' : theme.palette.action.hover;
+
+/** 라이트 모드 카드: 흰 바탕 + 상단 강조 띠 + 은은한 그림자 */
+const lightFloatCardSx = (accent) => ({
+  bgcolor: '#ffffff',
+  borderColor: '#e4e8ec',
+  borderTop: `3px solid ${alpha(accent, 0.85)}`,
+  backgroundImage: `linear-gradient(180deg, ${alpha(accent, 0.05)} 0, rgba(255,255,255,0) 96px)`,
+  boxShadow: '0 1px 2px rgba(31, 35, 40, 0.04), 0 4px 14px rgba(31, 35, 40, 0.06)',
+  transition: 'box-shadow 0.2s ease, transform 0.2s ease',
+  '&:hover': {
+    boxShadow: '0 2px 4px rgba(31, 35, 40, 0.06), 0 10px 24px rgba(31, 35, 40, 0.10)',
+    transform: 'translateY(-1px)',
+  },
+  '& .MuiTableCell-root': { borderColor: '#eef1f4' },
+  '& .MuiTableHead-root .MuiTableCell-root': {
+    bgcolor: '#f6f8fa',
+    borderBottom: 0,
+  },
+  '& .MuiTableHead-root .MuiTableCell-root:first-of-type': { borderTopLeftRadius: 6, borderBottomLeftRadius: 6 },
+  '& .MuiTableHead-root .MuiTableCell-root:last-of-type': { borderTopRightRadius: 6, borderBottomRightRadius: 6 },
+});
 
 const DashStatusCard = ({ icon: Icon, iconColor, title, subtitle, action, children }) => (
   <Box
@@ -242,6 +263,10 @@ const DashStatusCard = ({ icon: Icon, iconColor, title, subtitle, action, childr
       borderRadius: 2,
       p: 2,
       bgcolor: dashInnerCardBg(theme),
+      ...(theme.palette.mode !== 'dark' && {
+        ...lightFloatCardSx(iconColor || theme.palette.primary.main),
+        borderLeft: '1px solid #e4e8ec',
+      }),
     })}
   >
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.25 }}>
@@ -417,8 +442,10 @@ const StockCard = memo(({
   const changeRate = priceInfo?.changeRate || 0;
   const isPositive = change >= 0;
   const riseFallColor = price > 0 ? (isPositive ? HOLDINGS_DASH.red : HOLDINGS_DASH.blue) : HOLDINGS_DASH.text;
-  const isNXT = priceInfo?.stockMarket === 'NXT';
   const isUs = priceInfo?.stockMarket === 'US' || isUsHoldingCode(stockCode, priceInfo?.stockMarket);
+  const isNXT =
+    !isUs &&
+    (priceInfo?.stockMarket === 'NXT' || (buyItems || []).some((b) => b.stockMarket === 'NXT'));
   const stockMarket = isUs ? 'US' : buyItems?.[0]?.stockMarket || priceInfo?.stockMarket || 'KRX';
   const splitPlanId = useMemo(() => {
     const row = (buyItems || []).find(
@@ -478,15 +505,20 @@ const StockCard = memo(({
 
   return (
     <Box
-      sx={{
-        mb: 0,
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        border: '1px solid',
-        borderColor: 'divider',
-        borderRadius: 2,
-        bgcolor: dashInnerCardBg,
+      sx={(theme) => {
+        const isDark = theme.palette.mode === 'dark';
+        const accent = isUs ? '#C9A227' : theme.palette.primary.main;
+        return {
+          mb: 0,
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          border: '1px solid',
+          borderColor: 'divider',
+          borderRadius: 2,
+          bgcolor: dashInnerCardBg(theme),
+          ...(!isDark && lightFloatCardSx(accent)),
+        };
       }}
     >
       <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', pt: 2, px: 2, pb: 2 }}>
@@ -500,14 +532,21 @@ const StockCard = memo(({
             sx={{ px: splitPlanId != null || infinitePlanId != null ? 3 : 0 }}
           >
             <StockLogo stockCode={stockCode} isUs={isUs} size={18} sx={{ mr: 0.25 }} />
-            {isNXT && <NxtBadge size={18} sx={{ color: stockTitleColor }} />}
             <Typography
               variant="body1"
-              sx={{ fontWeight: 700, color: stockTitleColor }}
+              sx={{ fontWeight: 700, color: stockTitleColor, lineHeight: 1.25 }}
             >
               {stockName || stockCode} ({stockCode})
             </Typography>
-            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4, ml: 0.25 }}>
+            {isNXT && <NxtBadge size={18} sx={{ color: stockTitleColor }} />}
+            <Box
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 0.4,
+                ml: 0.25,
+              }}
+            >
               {splitPlanId != null && (
                 <Chip
                   size="small"
@@ -594,7 +633,7 @@ const StockCard = memo(({
                       display: 'block',
                       width: 10,
                       height: 10,
-                      bgcolor: '#fff',
+                      bgcolor: (theme) => (theme.palette.mode === 'dark' ? '#fff' : '#8c959f'),
                       borderRadius: '2px',
                     }}
                   />
@@ -1244,14 +1283,29 @@ const Dashboard = () => {
     if (holdingsPage >= holdingsPageCount) setHoldingsPage(0);
   }, [holdingsPage, holdingsPageCount]);
 
+  const [holdingsRotateMs, setHoldingsRotateMs] = useState(DEFAULT_HOLDINGS_ROTATE_MS);
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get('/settings/user-settings')
+      .then(({ data }) => {
+        const sec = Number(data?.holdingsRotateSec);
+        if (!cancelled && Number.isFinite(sec) && sec > 0) setHoldingsRotateMs(sec * 1000);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     if (holdingsPageCount <= 1 || holdingsRotatePaused) return undefined;
     const t = setInterval(
       () => setHoldingsPage((p) => (p + 1) % holdingsPageCount),
-      HOLDINGS_ROTATE_MS
+      holdingsRotateMs
     );
     return () => clearInterval(t);
-  }, [holdingsPageCount, holdingsRotatePaused, holdingsPage]);
+  }, [holdingsPageCount, holdingsRotatePaused, holdingsPage, holdingsRotateMs]);
 
   const holdingsPages = useMemo(() => {
     const pages = [];
@@ -1320,7 +1374,7 @@ const Dashboard = () => {
   ).padStart(2, '0')}`;
   const todaySellTitle = `${todayNow.getFullYear()}년 ${String(todayNow.getMonth() + 1).padStart(2, '0')}월 ${String(
     todayNow.getDate()
-  ).padStart(2, '0')}일 ${['일', '월', '화', '수', '목', '금', '토'][todayNow.getDay()]}요일 매도완료`;
+  ).padStart(2, '0')}일 ${['일', '월', '화', '수', '목', '금', '토'][todayNow.getDay()]}요일 체결`;
   const todayTradeHistory = useMemo(
     () =>
       tradeHistory
@@ -1358,7 +1412,7 @@ const Dashboard = () => {
     try {
       setTradeHistoryLoading(true);
       const [historyRes, settingsRes] = await Promise.all([
-        apiClient.get('/holdings/trade-history', { params: { year, month } }),
+        apiClient.get('/holdings/trade-history', { params: { year, month, includeBuys: 1 } }),
         apiClient.get('/settings').catch(() => null),
       ]);
       setTradeHistory(historyRes.data || []);
@@ -1727,7 +1781,7 @@ const Dashboard = () => {
 
   return (
     <PageFrame>
-      <Paper sx={{ px: 2, py: 1.25, mb: 2 }}>
+      <Paper sx={pageHeaderSx}>
         <Box
           sx={{
             display: 'flex',
@@ -2027,11 +2081,26 @@ const Dashboard = () => {
           sx={{ flexBasis: { md: 'calc(50% - 6px)' }, maxWidth: { md: 'calc(50% - 6px)' } }}
         >
           <Paper elevation={0} sx={{ p: 2.5, ...dashDarkPaperSx, height: '100%' }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.25}>
-              <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1rem', color: HOLDINGS_DASH.text }}>
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={0}>
+              <Typography
+                variant="h6"
+                sx={{ fontWeight: 700, fontSize: '1rem', lineHeight: 1.3, color: HOLDINGS_DASH.text }}
+              >
                 <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
                   <CalendarMonthIcon sx={{ fontSize: '1.4rem', color: '#4c9aff' }} />
                   {todaySellTitle}
+                  <Box
+                    component="span"
+                    sx={{
+                      fontSize: '0.75rem',
+                      fontWeight: 400,
+                      color: 'text.secondary',
+                      alignSelf: 'flex-end',
+                      pb: '2px',
+                    }}
+                  >
+                    최신 {TODAY_SELL_PREVIEW_COUNT}개만 표시합니다.
+                  </Box>
                 </Box>
               </Typography>
             </Box>
@@ -2043,20 +2112,17 @@ const Dashboard = () => {
             >
               <Table size="small">
                 <TableHead>
-                  <TableRow sx={{ '& .MuiTableCell-root': { pt: 0.25 } }}>
-                    <TableCell
-                      align="center"
-                      sx={{ ...dashTableHeadCellSx, px: 0.25, width: 72, whiteSpace: 'nowrap' }}
-                    >
-                      Date
+                  <TableRow sx={{ '& .MuiTableCell-root': { pt: 0, pb: 0.5 } }}>
+                    <TableCell align="center" sx={{ ...dashTableHeadCellSx, px: 0.25, width: 18, whiteSpace: 'nowrap' }}>
+                      구분
                     </TableCell>
                     <TableCell align="center" sx={{ ...dashTableHeadCellSx, px: 0.5 }}>종목명</TableCell>
-                    <TableCell align="center" sx={{ ...dashTableHeadCellSx, px: 0.25, width: 40, whiteSpace: 'nowrap' }}>
+                    <TableCell align="center" sx={{ ...dashTableHeadCellSx, px: 0.25, width: 18, whiteSpace: 'nowrap' }}>
                       차수
                     </TableCell>
                     <TableCell align="right" sx={{ ...dashTableHeadCellSx, px: 0.5 }}>Buy Price</TableCell>
                     <TableCell align="right" sx={{ ...dashTableHeadCellSx, px: 0.5 }}>Sell Price</TableCell>
-                    <TableCell align="right" sx={{ ...dashTableHeadCellSx, px: 0.5 }}>Sell Qty</TableCell>
+                    <TableCell align="right" sx={{ ...dashTableHeadCellSx, px: 0.5 }}>Qty</TableCell>
                     <TableCell align="right" sx={{ ...dashTableHeadCellSx, px: 0.5 }}>Profit</TableCell>
                   </TableRow>
                 </TableHead>
@@ -2066,7 +2132,7 @@ const Dashboard = () => {
                       <TableCell colSpan={7} align="center" sx={{ py: 4, borderColor: HOLDINGS_DASH.border }}>
                         <CircularProgress sx={{ color: HOLDINGS_DASH.muted }} />
                         <Typography variant="body2" sx={{ mt: 2, color: HOLDINGS_DASH.muted }}>
-                          매도완료 History를 불러오는 중...
+                          체결 내역을 불러오는 중...
                         </Typography>
                       </TableCell>
                     </TableRow>
@@ -2081,19 +2147,22 @@ const Dashboard = () => {
                     </TableRow>
                   ) : (
                     todayTradeHistory.map((item, index) => {
+                      const isBuy = item.side === 'BUY';
                       const buyPrice = parseFloat(item.buy_price || 0);
                       const sellPrice = parseFloat(item.sell_price || 0);
-                      const sellQty = parseInt(item.sell_qty || 0);
-                      const profitResult = calculateProfit({
-                        buyPrice,
-                        sellPrice,
-                        qty: sellQty,
-                        stockMarket: item.stockMarket,
-                        feeRates: brokerFeeRates,
-                      });
-                      const profit = profitResult.profitAmount;
-                      const date = item.createdAt || '-';
+                      const qty = parseInt((isBuy ? item.buy_qty : item.sell_qty) || 0);
+                      const profit = isBuy
+                        ? null
+                        : calculateProfit({
+                            buyPrice,
+                            sellPrice,
+                            qty,
+                            stockMarket: item.stockMarket,
+                            feeRates: brokerFeeRates,
+                          }).profitAmount;
                       const isUs = isUsHoldingCode(item.stockCode, item.stockMarket);
+                      const fmtPrice = (v) =>
+                        isUs ? `$${formatNumber(v)}` : formatNumber(Math.round(v));
                       const stageLabel =
                         String(item.strategyType || '').toUpperCase() === 'INFINITE_TRADE'
                           ? '무한'
@@ -2104,12 +2173,17 @@ const Dashboard = () => {
                       const stockName = item.stockName || stockNameMap.get(item.stockCode) || item.stockCode;
 
                       return (
-                        <TableRow key={`${item.stockCode}_${item.createdAt}_${index}`}>
+                        <TableRow key={`${item.side}_${item.orderId ?? item.stockCode}_${item.createdAt}_${index}`}>
                           <TableCell
                             align="center"
-                            sx={{ ...dashTableBodyCellSx, px: 0.25, width: 72, whiteSpace: 'nowrap' }}
+                            sx={{
+                              ...dashTableBodyCellSx,
+                              px: 0.25,
+                              width: 18,
+                              whiteSpace: 'nowrap',
+                            }}
                           >
-                            {date}
+                            {isBuy ? '매수' : '매도'}
                           </TableCell>
                           <TableCell
                             align="center"
@@ -2143,21 +2217,21 @@ const Dashboard = () => {
                           </TableCell>
                           <TableCell
                             align="center"
-                            sx={{ ...dashTableBodyCellSx, px: 0.25, width: 40, whiteSpace: 'nowrap' }}
+                            sx={{ ...dashTableBodyCellSx, px: 0.25, width: 18, whiteSpace: 'nowrap' }}
                           >
                             {stageLabel}
                           </TableCell>
                           <TableCell align="right" sx={{ ...dashTableBodyCellSx, px: 0.5, fontVariantNumeric: 'tabular-nums' }}>
-                            {isUs ? `$${formatNumber(buyPrice)}` : formatNumber(Math.round(buyPrice))}
+                            {buyPrice > 0 ? fmtPrice(buyPrice) : '-'}
                           </TableCell>
                           <TableCell align="right" sx={{ ...dashTableBodyCellSx, px: 0.5, fontVariantNumeric: 'tabular-nums' }}>
-                            {isUs ? `$${formatNumber(sellPrice)}` : formatNumber(Math.round(sellPrice))}
+                            {isBuy ? '-' : fmtPrice(sellPrice)}
                           </TableCell>
                           <TableCell align="right" sx={{ ...dashTableBodyCellSx, px: 0.5, fontVariantNumeric: 'tabular-nums' }}>
-                            {formatNumber(sellQty)}
+                            {formatNumber(qty)}
                           </TableCell>
                           <TableCell align="right" sx={{ ...dashTableBodyCellSx, px: 0.5, fontVariantNumeric: 'tabular-nums' }}>
-                            {isUs ? `$${formatNumber(profit)}` : formatNumber(profit)}
+                            {profit == null ? '-' : isUs ? `$${formatNumber(profit)}` : formatNumber(profit)}
                           </TableCell>
                         </TableRow>
                       );

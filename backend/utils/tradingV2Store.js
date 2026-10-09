@@ -1770,6 +1770,86 @@ const listCompletedSellsFromTradingV2 = async (userId) => {
   return rows;
 };
 
+/**
+ * 대시보드 당일 체결 — V2 BUY 주문(체결 합) 목록
+ * @returns {Promise<Array<{side, stockCode, stockName, stockMarket, buy_price, buy_qty, sell_cur, createdAt, planId, strategyType, orderId, source}>>}
+ */
+const listBuyFillsFromTradingV2 = async (userId) => {
+  await ensureTradingV2Tables();
+  const uid = String(userId);
+
+  const buyRes = await pool.query(
+    `SELECT o.id AS order_id,
+            o.requested_qty,
+            o.order_reason,
+            o.trading_id AS plan_id,
+            p.strategy_type,
+            i.symbol,
+            i.name AS stock_name,
+            i.market,
+            COALESCE(o.stage_no, st.stage) AS stage_no,
+            COALESCE(SUM(f.fill_qty), 0) AS fill_qty_sum,
+            COALESCE(SUM(COALESCE(NULLIF(f.fill_amount, 0), f.fill_price * f.fill_qty)), 0) AS fill_amt_sum,
+            MAX(COALESCE(f.filled_at, f.created_at)) AS bought_at
+     FROM trading_orders o
+     JOIN trading_fills f ON f.order_id = o.id
+     JOIN trading_plans p ON p.id = o.trading_id
+     JOIN instruments i ON i.id = o.instrument_id
+     LEFT JOIN trading_stages st ON st.id = o.stage_id
+     WHERE p.user_id = $1
+       AND UPPER(o.side) = 'BUY'
+     GROUP BY o.id, o.requested_qty, o.order_reason, o.trading_id,
+              p.strategy_type, i.symbol, i.name, i.market, o.stage_no, st.stage
+     ORDER BY bought_at DESC`,
+    [uid]
+  );
+
+  const { normalizeAutoCode, isUsMarket } = require('./autoTradingMarket');
+  const toKstString = (date) => {
+    const k = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+    const p2 = (n) => String(n).padStart(2, '0');
+    return `${k.getFullYear()}-${p2(k.getMonth() + 1)}-${p2(k.getDate())} ${p2(k.getHours())}:${p2(
+      k.getMinutes()
+    )}:${p2(k.getSeconds())}`;
+  };
+
+  const rows = [];
+  for (const row of buyRes.rows) {
+    const fillQtySum = Math.floor(Number(row.fill_qty_sum) || 0);
+    const requestedQty = Math.floor(Number(row.requested_qty) || 0);
+    const buyQty = requestedQty > 0 ? Math.min(fillQtySum, requestedQty) : fillQtySum;
+    if (!(buyQty > 0)) continue;
+    const buyPrice = fillQtySum > 0 ? (Number(row.fill_amt_sum) || 0) / fillQtySum : 0;
+    if (!(buyPrice > 0)) continue;
+
+    const market = String(row.market || '').toUpperCase();
+    const symbol = String(row.symbol || '').trim();
+    const stockMarket =
+      market === 'US' || isUsMarket(market, symbol) ? 'US' : market === 'NXT' ? 'NXT' : 'KRX';
+    const stockCode = normalizeAutoCode(symbol, stockMarket) || symbol;
+    const boughtAt = row.bought_at ? new Date(row.bought_at) : null;
+    const stageNo = row.stage_no != null ? Number(row.stage_no) : null;
+
+    rows.push({
+      side: 'BUY',
+      userId: uid,
+      stockCode,
+      stockName: row.stock_name || stockCode,
+      stockMarket,
+      buy_price: buyPrice,
+      buy_qty: buyQty,
+      orderReason: row.order_reason || null,
+      sell_cur: stageNo != null && stageNo > 0 ? stageNo : null,
+      createdAt: boughtAt && !Number.isNaN(boughtAt.getTime()) ? toKstString(boughtAt) : null,
+      planId: Number(row.plan_id),
+      strategyType: String(row.strategy_type || '').toUpperCase(),
+      orderId: Number(row.order_id),
+      source: 'v2',
+    });
+  }
+  return rows;
+};
+
 module.exports = {
   STRATEGY_TYPES,
   PLAN_STATUSES,
@@ -1799,4 +1879,5 @@ module.exports = {
   listOpenTradingOrdersForUser,
   rematchOrphanOrdersToStages,
   listCompletedSellsFromTradingV2,
+  listBuyFillsFromTradingV2,
 };

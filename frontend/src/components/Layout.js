@@ -100,7 +100,10 @@ const sideMenuGroups = [
 ];
 
 const SIDEBAR_WIDTH = 180;
+const SIDEBAR_GAP = 16;
 const APPBAR_HEIGHT = 64;
+/** 창을 이보다 좁히면 화면을 줄이지 않고 가로 스크롤 */
+const MIN_PAGE_WIDTH = 1600;
 
 /** 서버 미등록 상태에서도 열리는 화면 (대시보드는 빈 상태로 보인다) */
 const UNREGISTERED_OPEN_PATHS = [
@@ -169,11 +172,33 @@ const Layout = () => {
   const isActive = useCallback((path) => location.pathname === path, [location.pathname]);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-      <AppBar position="fixed" sx={{ width: '100%' }}>
+    <Box sx={{ minWidth: MIN_PAGE_WIDTH, minHeight: '100vh', bgcolor: 'background.default' }}>
+      <AppBar position="sticky">
         <Toolbar sx={{ justifyContent: 'space-between', gap: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Typography variant="h5" component="div" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography
+              variant="h5"
+              component="div"
+              role="button"
+              tabIndex={0}
+              title="대시보드"
+              onClick={() => handleMenuClick('/dashboard')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleMenuClick('/dashboard');
+                }
+              }}
+              sx={{
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                cursor: 'pointer',
+                userSelect: 'none',
+                color: isDark ? undefined : '#1a7f37',
+              }}
+            >
               <CandlestickChartIcon sx={{ fontSize: '1.4rem' }} />
               PlanGo Agent
             </Typography>
@@ -252,6 +277,7 @@ const Layout = () => {
         onClose={handleLogoutCancel}
         aria-labelledby="logout-dialog-title"
         aria-describedby="logout-dialog-description"
+        PaperProps={{ sx: { width: 520, maxWidth: 'calc(100% - 32px)' } }}
       >
         <DialogTitle id="logout-dialog-title" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <LogoutIcon color="primary" />
@@ -271,75 +297,116 @@ const Layout = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
       <Box
         component="nav"
         sx={{
-          position: 'fixed',
-          top: APPBAR_HEIGHT,
-          left: 0,
-          bottom: 0,
+          position: 'sticky',
+          top: APPBAR_HEIGHT + SIDEBAR_GAP,
+          ml: `${SIDEBAR_GAP}px`,
+          mt: `${SIDEBAR_GAP}px`,
           width: SIDEBAR_WIDTH,
-          borderRight: 1,
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
+          flexShrink: 0,
+          maxHeight: `calc(100vh - ${APPBAR_HEIGHT + SIDEBAR_GAP * 2}px)`,
           overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1.5,
           zIndex: (t) => t.zIndex.appBar - 1,
         }}
       >
-        {sideMenuGroups.map((group) => (
-          <List
-            key={group.title}
-            dense
-            sx={{ py: 0.5 }}
-            subheader={
-              <Typography
-                variant="body2"
-                sx={{ px: 2, pt: 1.5, pb: 0.75, color: 'text.secondary', fontWeight: 500 }}
-              >
-                {group.title}
-              </Typography>
-            }
+        {[
+          sideMenuGroups.filter((g) => !g.items.some((i) => i.info)),
+          sideMenuGroups.filter((g) => g.items.some((i) => i.info)),
+        ].map((cardGroups, cardIndex) => (
+          <Box
+            key={cardIndex}
+            sx={{
+              bgcolor: 'background.paper',
+              border: 1,
+              borderColor: 'divider',
+              borderRadius: 1.5,
+              overflow: 'hidden',
+              boxShadow: isDark ? '0 2px 10px rgba(0,0,0,0.45)' : '0 2px 10px rgba(0,0,0,0.08)',
+              flexShrink: 0,
+            }}
           >
-            {group.items.map((item) => item.info ? (
-              <Box
-                key={item.key}
-                sx={{ mx: 1, px: 2, py: 0.75, display: 'flex', alignItems: 'center' }}
+            {cardGroups.map((group) => (
+              <List
+                key={group.title}
+                dense
+                disablePadding
+                sx={{ '&:last-of-type > :last-child': { borderBottom: 0 } }}
+                subheader={
+                  <Typography
+                    sx={{
+                      px: 1.5,
+                      py: 0.75,
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      color: isDark ? 'text.secondary' : '#0969da',
+                      bgcolor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.045)',
+                      borderBottom: 1,
+                      borderColor: 'divider',
+                    }}
+                  >
+                    {group.title}
+                  </Typography>
+                }
               >
-                <Typography variant="caption" sx={{ wordBreak: 'break-all' }}>
-                  {appVersion ? `v${appVersion}` : '-'}
-                </Typography>
-              </Box>
-            ) : (
-              <ListItemButton
-                key={item.path}
-                selected={isActive(item.path)}
-                disabled={isLocked(item.path)}
-                onClick={() => handleMenuClick(item.path)}
-                sx={{
-                  mx: 1,
-                  borderRadius: 1.5,
-                  '&.Mui-selected': {
-                    bgcolor: isDark ? 'rgba(144, 202, 249, 0.16)' : 'rgba(25, 118, 210, 0.12)',
-                  },
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 36, color: 'text.primary' }}>
-                  <item.Icon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText primary={item.label} />
-              </ListItemButton>
+                {group.items.map((item) => item.info ? (
+                  <Box
+                    key={item.key}
+                    sx={{ px: 1.5, py: 0.75, borderBottom: 1, borderColor: 'divider' }}
+                  >
+                    <Typography
+                      variant="caption"
+                      sx={{ display: 'block', textAlign: 'right', wordBreak: 'break-all' }}
+                    >
+                      {appVersion || '-'}
+                    </Typography>
+                  </Box>
+                ) : (
+                  <ListItemButton
+                    key={item.path}
+                    selected={isActive(item.path)}
+                    disabled={isLocked(item.path)}
+                    onClick={() => handleMenuClick(item.path)}
+                    sx={{
+                      px: 1.5,
+                      py: 0.5,
+                      borderBottom: 1,
+                      borderColor: 'divider',
+                      '&.Mui-selected, &.Mui-selected:hover': {
+                        bgcolor: isDark ? 'rgba(144, 202, 249, 0.22)' : '#3a3a3a',
+                        color: isDark ? 'text.primary' : '#fff',
+                      },
+                      '&.Mui-selected .MuiListItemIcon-root': {
+                        color: isDark ? 'text.primary' : '#fff',
+                      },
+                    }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 30, color: 'text.secondary' }}>
+                      <item.Icon sx={{ fontSize: '1.05rem' }} />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={item.label}
+                      primaryTypographyProps={{ fontSize: '0.85rem', fontWeight: 400 }}
+                    />
+                  </ListItemButton>
+                ))}
+              </List>
             ))}
-          </List>
+          </Box>
         ))}
       </Box>
       <Box
         component="main"
         sx={{
-          flexGrow: 1,
+          flex: 1,
+          minWidth: 0,
           p: 3,
-          ml: `${SIDEBAR_WIDTH}px`,
-          width: `calc(100% - ${SIDEBAR_WIDTH}px)`,
-          mt: `${APPBAR_HEIGHT}px`,
+          pt: `${SIDEBAR_GAP}px`,
           minHeight: `calc(100vh - ${APPBAR_HEIGHT}px)`,
           backgroundColor: 'background.default', // 테마의 배경색 사용
           display: 'flex',
@@ -365,6 +432,7 @@ const Layout = () => {
           <Outlet />
         </Box>
         <Footer />
+      </Box>
       </Box>
     </Box>
   );
