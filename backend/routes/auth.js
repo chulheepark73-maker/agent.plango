@@ -308,6 +308,11 @@ router.put('/change-password', authenticateToken, async (req, res) => {
   }
 });
 
+router.get('/central-status', authenticateToken, async (req, res) => {
+  const ok = await central.pingCentral();
+  res.json(ok ? { ok: true } : { ok: false, error: central.centralUnavailableMessage() });
+});
+
 router.post('/verify-password', authenticateToken, async (req, res) => {
   const { password } = req.body || {};
   if (!password) {
@@ -317,7 +322,9 @@ router.post('/verify-password', authenticateToken, async (req, res) => {
     res.json({ verified: await central.verifyPassword(req.token, String(password)) });
   } catch (error) {
     console.error('[비밀번호 확인] 중앙 오류:', error.message);
-    res.status(error.network ? 503 : 502).json({ error: '비밀번호 확인 중 오류가 발생했습니다.' });
+    res.status(error.network ? 503 : 502).json({
+      error: error.network ? central.centralUnavailableMessage() : '비밀번호 확인 중 오류가 발생했습니다.',
+    });
   }
 });
 

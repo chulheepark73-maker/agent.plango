@@ -30,7 +30,6 @@ import AssessmentIcon from '@mui/icons-material/Assessment';
 import DnsIcon from '@mui/icons-material/Dns';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
-import LockResetIcon from '@mui/icons-material/LockReset';
 import TelegramIcon from '@mui/icons-material/Telegram';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
@@ -89,9 +88,7 @@ const sideMenuGroups = [
     title: '나의 서비스',
     items: [
       { Icon: ManageAccountsIcon, path: '/profile', label: '내 정보관리' },
-      { Icon: TelegramIcon, path: '/telegram-settings', label: '텔레그램 설정' },
-      { Icon: LockResetIcon, path: '/change-password', label: '비밀번호변경' },
-    ],
+      { Icon: TelegramIcon, path: '/telegram-settings', label: '텔레그램 설정' },    ],
   },
   {
     title: '프로그램 정보',
@@ -431,7 +428,7 @@ const Layout = () => {
           )}
           <Outlet />
         </Box>
-        <Footer />
+        <Footer appVersion={appVersion} />
       </Box>
       </Box>
     </Box>

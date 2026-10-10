@@ -108,6 +108,16 @@ const getPublicKey = async ({ force = false } = {}) => {
 
 const listPlans = () => wrap(() => http.get('/api/auth/plans'));
 
+/** 중앙 서버 응답 여부만 확인 (네트워크 오류일 때만 false) */
+const pingCentral = async () => {
+  try {
+    await wrap(() => http.get('/api/auth/plans', { timeout: 5000 }));
+    return true;
+  } catch (e) {
+    return !e.network;
+  }
+};
+
 /* ---------- 사용자 토큰 ---------- */
 
 const login = (body) => wrap(() => http.post('/api/auth/login', body));
@@ -184,6 +194,7 @@ module.exports = {
   centralUnavailableMessage,
   getPublicKey,
   listPlans,
+  pingCentral,
   login,
   logout,
   verifyPassword,

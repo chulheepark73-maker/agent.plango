@@ -1,6 +1,6 @@
 {
   "name": "kiwoom-auto-trading",
-  "version": "1.0.20261004.3",
+  "version": "1.0.20261004.4",
   "description": "PlanGo Agent",
   "main": "backend/server.js",
   "scripts": {

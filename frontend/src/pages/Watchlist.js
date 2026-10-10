@@ -89,6 +89,28 @@ const parseRateValue = (v) => {
 /** 무한매수 기본 단계별 배수 (평단 대비 구간, 라면형) */
 const DEFAULT_INFINITE_BUY_MULTIPLIERS = ['0', '0.5', '1', '1.5', '2', '2.5'];
 
+/** 무한매수 매수시간 기본값 (KST) — ETF는 애프터마켓 거래 불가라 정규장 15:00 */
+const DEFAULT_INFINITE_BUY_TIME = { KR: '19:00', KR_ETF: '15:00', US: '04:00' };
+const ETF_NAME_RE =
+  /ETF|ETN|KODEX|TIGER|ACE|SOL |KIWOOM|HANARO|PLUS|TIMEFOLIO|ARIRANG|KOSEF|TREX|BNK |KBSTAR|파워|레버리지|인버스/i;
+const defaultInfiniteBuyTime = (isUs, stockName) => {
+  if (isUs) return DEFAULT_INFINITE_BUY_TIME.US;
+  return ETF_NAME_RE.test(String(stockName || ''))
+    ? DEFAULT_INFINITE_BUY_TIME.KR_ETF
+    : DEFAULT_INFINITE_BUY_TIME.KR;
+};
+const normalizeBuyTime = (v) => {
+  const m = String(v ?? '').trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return '';
+  return `${m[1].padStart(2, '0')}:${m[2]}`;
+};
+/** 국내 ETF는 NXT 미상장 — KRX 정규장 연속매매(09:00~15:20) 밖이면 주문 불가 */
+const isKrEtfOffHoursBuyTime = (isUs, stockName, time) => {
+  if (isUs || !ETF_NAME_RE.test(String(stockName || ''))) return false;
+  const t = normalizeBuyTime(time);
+  return !!t && (t < '09:00' || t > '15:20');
+};
+
 /** V2 자동매매 활성화 해제 시 해당 전략 패널 비활성 표시 */
 const V2_DISABLED_PANEL_SX = { opacity: 0.4, pointerEvents: 'none', userSelect: 'none' };
 
@@ -874,10 +896,10 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
         seedAmount: cfg.seedAmount,
         unitBuyAmount: cfg.unitBuyAmount,
         buyEntry: cfg.buyEntry,
+        infiniteBuyTime: cfg.infiniteBuyTime,
         buyStepPercent: cfg.buyStepPercent,
         buyMultipliers: cfg.buyMultipliers,
         sellTargetPercent: cfg.sellTargetPercent,
-        sellTargetPercent2: cfg.sellTargetPercent2,
         stages,
         orders: stageSource.orders || [],
         fills: stageSource.fills || [],
@@ -900,7 +922,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
     }
   }, [user?.id]);
 
-  const createDefaultRepeatAutoTradingForm = useCallback((isUs = false) => {
+  const createDefaultRepeatAutoTradingForm = useCallback((isUs = false, stockName = '') => {
     const buyTotal = isUs ? DEFAULT_BUY_TOTAL_US : defaultBuyTotal;
     return {
     maxStages: 5,
@@ -921,8 +943,8 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
     buyStepPercent: '2',
     buyMultipliers: [...DEFAULT_INFINITE_BUY_MULTIPLIERS],
     buyEntry: '',
+    infiniteBuyTime: defaultInfiniteBuyTime(isUs, stockName),
     sellTargetPercent: '10',
-    sellTargetPercent2: '10',
     buyStages: Array(5).fill(null).map((_, i) => ({
       stage: i + 1,
       dropRate: i === 0 ? 2 : 5,
@@ -952,7 +974,8 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
           targetBuyDialogStock.stockMarket || targetBuyDialogStock.market,
           targetBuyDialogStock.stockCode
         );
-        setRepeatAutoTradingForm(createDefaultRepeatAutoTradingForm(isUs));
+        const stockName = targetBuyDialogStock.stockName;
+        setRepeatAutoTradingForm(createDefaultRepeatAutoTradingForm(isUs, stockName));
         setAutoTradingLoadMessage('');
         setSwingResultMessage('');
 
@@ -966,7 +989,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
 
         // V2 trading_plans 로드
         if (savedData._source === 'v2') {
-          const defaults = createDefaultRepeatAutoTradingForm(isUs);
+          const defaults = createDefaultRepeatAutoTradingForm(isUs, stockName);
           const stageDefaultBuyTotal = defaults.buyStages[0].buyTotal;
           const stages = savedData.stages || [];
           const buyByStage = new Map();
@@ -1082,9 +1105,8 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
               savedData.buyEntry != null && savedData.buyEntry !== ''
                 ? String(savedData.buyEntry)
                 : '',
-            sellTargetPercent: trailingToFormString(savedData.sellTargetPercent, '10'),
-            sellTargetPercent2: trailingToFormString(savedData.sellTargetPercent2, '10'),
-            buyStages: newBuyStages,
+            infiniteBuyTime: normalizeBuyTime(savedData.infiniteBuyTime) || defaults.infiniteBuyTime,
+            sellTargetPercent: trailingToFormString(savedData.sellTargetPercent, '10'),            buyStages: newBuyStages,
             sellStages: newSellStages,
           });
           setAutoTradingLoadMessage(
@@ -1118,8 +1140,8 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
     buyStepPercent: '2',
     buyMultipliers: [...DEFAULT_INFINITE_BUY_MULTIPLIERS],
     buyEntry: '',
+    infiniteBuyTime: DEFAULT_INFINITE_BUY_TIME.KR,
     sellTargetPercent: '10',
-    sellTargetPercent2: '10',
     buyStages: Array(5).fill(null).map((_, i) => ({
       stage: i + 1,
       dropRate: i === 0 ? 2 : 5, // 1차: 2%, 2-5차: 5%
@@ -2798,7 +2820,7 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
                             </TableCell>
                             <TableCell>
                               {stage.buyEnd === 'Y' ? (
-                                <Box display="flex" alignItems="center" gap={1} sx={{ height: '40px' }}>
+                                <Box display="flex" alignItems="center" gap={1} sx={{ height: 32 }}>
                                   <Typography variant="body2" sx={{ fontSize: '0.875rem', color: 'success.main', fontWeight: 'bold' }}>
                                     {formatPriceWithCurrency(parseFloat(stage.buyPrice || 0), dialogCurrencySymbol)} / {parseInt(stage.buyQty || 0)}주
                                   </Typography>
@@ -3267,39 +3289,20 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
                     >
                       단계별 배수
                     </Typography>
-                    {multipliers.slice(0, 2).map((mult, idx) => (
-                      <Box
-                        key={`buy-mult-row-${idx}`}
-                        display="grid"
-                        sx={{
-                          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                          columnGap: 2,
-                          pl: 2,
-                          borderBottom: '1px solid',
-                          borderColor: 'divider',
-                        }}
-                      >
+                    {Array.from({ length: Math.max(3, multipliers.length - 3) }, (_, row) => {
+                      const leftIdx = row < 3 && row < multipliers.length ? row : null;
+                      const rightIdx = row + 3 < multipliers.length ? row + 3 : null;
+                      const bandRow = (idx) => (
                         <InfiniteBandRow
                           label={infiniteBuyBandLabel(idx, repeatAutoTradingForm.buyStepPercent, multipliers.length)}
-                          value={mult}
+                          value={multipliers[idx]}
                           onChange={handleMultiplierChange(idx)}
                           labelColor={infiniteBandLabelColor(idx)}
                         />
-                        {multipliers[idx + 2] != null && (
-                          <InfiniteBandRow
-                            label={infiniteBuyBandLabel(idx + 2, repeatAutoTradingForm.buyStepPercent, multipliers.length)}
-                            value={multipliers[idx + 2]}
-                            onChange={handleMultiplierChange(idx + 2)}
-                            labelColor={infiniteBandLabelColor(idx + 2)}
-                          />
-                        )}
-                      </Box>
-                    ))}
-                    {multipliers.slice(4).map((mult, sliceIdx) => {
-                      const idx = sliceIdx + 4;
+                      );
                       return (
                         <Box
-                          key={`buy-mult-row-${idx}`}
+                          key={`buy-mult-row-${row}`}
                           display="grid"
                           sx={{
                             gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
@@ -3309,13 +3312,8 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
                             borderColor: 'divider',
                           }}
                         >
-                          <Box />
-                          <InfiniteBandRow
-                            label={infiniteBuyBandLabel(idx, repeatAutoTradingForm.buyStepPercent, multipliers.length)}
-                            value={mult}
-                            onChange={handleMultiplierChange(idx)}
-                            labelColor={infiniteBandLabelColor(idx)}
-                          />
+                          {leftIdx != null ? bandRow(leftIdx) : <Box />}
+                          {rightIdx != null ? bandRow(rightIdx) : <Box />}
                         </Box>
                       );
                     })}
@@ -3374,6 +3372,59 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
                         sx={{ width: 120, ...INFINITE_PILL_INPUT_SX }}
                       />
                     </Box>
+                    <Box
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      sx={{
+                        borderBottom: '1px solid',
+                        borderColor: 'divider',
+                        py: 0.7,
+                        minHeight: 44,
+                      }}
+                    >
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem', flexShrink: 0 }}>
+                        무한매매 매수시간
+                      </Typography>
+                      <TextField
+                        type="time"
+                        size="small"
+                        value={repeatAutoTradingForm.infiniteBuyTime || ''}
+                        onChange={(e) =>
+                          setRepeatAutoTradingForm({
+                            ...repeatAutoTradingForm,
+                            infiniteBuyTime: e.target.value,
+                          })
+                        }
+                        inputProps={{ step: 60 }}
+                        sx={(theme) => ({
+                          width: 120,
+                          ...INFINITE_PILL_INPUT_SX,
+                          '& input::-webkit-calendar-picker-indicator': {
+                            filter: isDarkTheme(theme) ? 'invert(0.8)' : 'none',
+                          },
+                        })}
+                      />
+                    </Box>
+                    {isKrEtfOffHoursBuyTime(
+                      dialogIsUs,
+                      targetBuyDialogStock?.stockName,
+                      repeatAutoTradingForm.infiniteBuyTime
+                    ) && (
+                      <Typography
+                        variant="caption"
+                        component="div"
+                        sx={(theme) => ({
+                          py: 0.5,
+                          fontSize: '0.72rem',
+                          color: isDarkTheme(theme) ? '#e3b341' : '#9a6700',
+                          borderBottom: '1px solid',
+                          borderColor: 'divider',
+                        })}
+                      >
+                        국내 ETF는 정규장(09:00~15:20)에만 매수됩니다. 이 시간에는 주문이 체결되지 않을 수 있습니다.
+                      </Typography>
+                    )}
                     <Box
                       display="flex"
                       alignItems="center"
@@ -3572,6 +3623,9 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
                         repeatAutoTradingForm.unitBuyAmount,
                         marketKey === 'US'
                       );
+                      strategyConfig.infiniteBuyTime =
+                        normalizeBuyTime(repeatAutoTradingForm.infiniteBuyTime) ||
+                        defaultInfiniteBuyTime(marketKey === 'US', targetBuyDialogStock?.stockName);
                       strategyConfig.buyStepPercent = parsePercentFieldForSave(repeatAutoTradingForm.buyStepPercent, 2);
                       strategyConfig.buyMultipliers = (
                         repeatAutoTradingForm.buyMultipliers?.length
@@ -3582,7 +3636,6 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
                         return Number.isFinite(n) ? n : 0;
                       });
                       strategyConfig.sellTargetPercent = parsePercentFieldForSave(repeatAutoTradingForm.sellTargetPercent, 10);
-                      strategyConfig.sellTargetPercent2 = parsePercentFieldForSave(repeatAutoTradingForm.sellTargetPercent2, 10);
                     } else {
                       const { buyStages: calculatedBuyStages, sellStages: calculatedSellStages } =
                         calculateBuySellPrices(latestPrice);
@@ -3725,6 +3778,9 @@ const Watchlist = ({ noContainer = false, hideActions = false }) => {
                     {dialogCurrencySymbol}
                   </Typography>
                   <Typography variant="body2">단계 간격: {preparedAutoTradingData.strategyConfig?.buyStepPercent}</Typography>
+                  <Typography variant="body2">
+                    매수시간: {preparedAutoTradingData.strategyConfig?.infiniteBuyTime} (한국시간)
+                  </Typography>
                   <Typography variant="body2">
                     배수: {(preparedAutoTradingData.strategyConfig?.buyMultipliers || []).join(' / ')}
                   </Typography>

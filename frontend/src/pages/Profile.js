@@ -5,8 +5,10 @@ import LockIcon from '@mui/icons-material/Lock';
 import apiClient from '../utils/axios';
 import PageFrame, { pageHeaderSx } from '../components/PageFrame';
 import { useAuth } from '../contexts/AuthContext';
+import useCentralStatus from '../hooks/useCentralStatus';
 
 const PHONE_RE = /^01[0-9]{9}$/;
+const MIN_PASSWORD_LENGTH = 6;
 
 const errorText = (error, fallback) =>
   error?.response?.data?.error || error?.response?.data?.errors?.[0]?.msg || fallback;
@@ -19,9 +21,14 @@ const Profile = () => {
   const { user, fetchUser } = useAuth();
   const [verified, setVerified] = useState(false);
   const [password, setPassword] = useState('');
+  const [verifiedPassword, setVerifiedPassword] = useState('');
   const [profile, setProfile] = useState({ username: '', phoneNumber: '' });
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState(null);
   const [busy, setBusy] = useState(false);
+  const { checking, offlineMessage, recheck } = useCentralStatus();
+  const offline = !!offlineMessage;
 
   useEffect(() => {
     if (!verified) return;
@@ -38,6 +45,7 @@ const Profile = () => {
       const { data } = await apiClient.post('/auth/verify-password', { password });
       if (data?.verified) {
         setVerified(true);
+        setVerifiedPassword(password);
         setPassword('');
       } else {
         setMessage({ type: 'error', text: '비밀번호가 일치하지 않습니다.' });
@@ -51,17 +59,49 @@ const Profile = () => {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    setBusy(true);
     setMessage(null);
+    const changePassword = !!(newPassword || confirmPassword);
+    if (changePassword) {
+      if (newPassword.length < MIN_PASSWORD_LENGTH) {
+        setMessage({ type: 'error', text: `새 비밀번호는 최소 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.` });
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setMessage({ type: 'error', text: '새 비밀번호가 서로 다릅니다. 다시 입력해주세요.' });
+        return;
+      }
+    }
+
+    setBusy(true);
+    let profileSaved = false;
     try {
-      const { data } = await apiClient.put('/auth/profile', {
+      await apiClient.put('/auth/profile', {
         username: profile.username.trim(),
         phoneNumber: profile.phoneNumber.replace(/[-\s]/g, ''),
       });
-      setMessage({ type: 'success', text: data.message || '개인정보가 수정되었습니다.' });
+      profileSaved = true;
       fetchUser?.();
+
+      if (changePassword) {
+        await apiClient.put('/auth/change-password', {
+          currentPassword: verifiedPassword,
+          newPassword,
+        });
+        setVerifiedPassword(newPassword);
+        setNewPassword('');
+        setConfirmPassword('');
+      }
+      setMessage({
+        type: 'success',
+        text: changePassword ? '개인정보와 비밀번호가 변경되었습니다.' : '개인정보가 수정되었습니다.',
+      });
     } catch (error) {
-      setMessage({ type: 'error', text: errorText(error, '개인정보 수정 중 오류가 발생했습니다.') });
+      setMessage({
+        type: 'error',
+        text: profileSaved
+          ? `개인정보는 수정되었지만 비밀번호 변경에 실패했습니다. ${errorText(error, '')}`.trim()
+          : errorText(error, '개인정보 수정 중 오류가 발생했습니다.'),
+      });
     } finally {
       setBusy(false);
     }
@@ -78,13 +118,26 @@ const Profile = () => {
         </Box>
       </Paper>
 
-      <Box sx={{ width: { xs: '100%', md: '50%', lg: 'calc(100% / 3)' }, minWidth: { md: 480 } }}>
-        {message && (
-          <Alert severity={message.type} sx={{ mb: 2 }} onClose={() => setMessage(null)}>
-            {message.text}
-          </Alert>
-        )}
+      {offline && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={recheck} disabled={checking}>
+              다시 확인
+            </Button>
+          }
+        >
+          {offlineMessage}
+        </Alert>
+      )}
+      {message && (
+        <Alert severity={message.type} sx={{ mb: 2 }} onClose={() => setMessage(null)}>
+          {message.text}
+        </Alert>
+      )}
 
+      <Box sx={{ width: { xs: '100%', md: '50%', lg: 'calc(100% / 3)' }, minWidth: { md: 480 } }}>
         {!verified ? (
           <>
             <SectionTitle>비밀번호 확인</SectionTitle>
@@ -100,11 +153,17 @@ const Profile = () => {
                 label="비밀번호"
                 autoComplete="current-password"
                 autoFocus
+                disabled={checking || offline}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 sx={{ mb: 2 }}
               />
-              <Button type="submit" variant="contained" fullWidth disabled={busy || !password}>
+              <Button
+                type="submit"
+                variant="contained"
+                fullWidth
+                disabled={busy || checking || offline || !password}
+              >
                 확인
               </Button>
             </Paper>
@@ -135,6 +194,28 @@ const Profile = () => {
                 }
                 error={phoneInvalid}
                 helperText={phoneInvalid ? '올바른 휴대폰 번호를 입력하세요. (예: 01012345678)' : ''}
+              />
+              <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
+                <Typography sx={{ fontWeight: 'bold', fontSize: '0.875rem' }}>비밀번호 변경</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  변경하지 않으려면 비워 두세요.
+                </Typography>
+              </Box>
+              <TextField
+                size="small"
+                type="password"
+                label={`새 비밀번호 (${MIN_PASSWORD_LENGTH}자 이상)`}
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+              <TextField
+                size="small"
+                type="password"
+                label="새 비밀번호 재입력"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
               />
               <Button
                 type="submit"

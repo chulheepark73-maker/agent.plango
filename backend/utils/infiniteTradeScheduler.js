@@ -1,8 +1,7 @@
 /**
  * 무한매매 — 단계별 배수 스케줄 매수
- * - KR 주식: KRX 애프터 19:00 (1일 1회)
- * - KR ETF: 15:00 (1일 1회)
- * - US: 정규장 마감 1시간 전(15:00 ET) (1일 1회)
+ * - 매수시간: strategy_config.infiniteBuyTime (KST HH:mm, 1일 1회)
+ * - 미설정 시 기본값: KR 주식 19:00 / KR ETF 15:00 / US 04:00
  * - 1회 entry 체결 다음날부터, 평단 대비 배수로 금액 산정 후 현재가 지정가 즉시 주문
  */
 
@@ -95,21 +94,37 @@ const getPriceForPlan = async (userId, stockCode, stockMarket) => {
   return 0;
 };
 
-/**
- * @param {'KR_STOCK'|'KR_ETF'|'US'} slot
- */
-const shouldRunSlotNow = (slot) => {
-  if (slot === 'US') {
-    const ny = nyParts();
-    if (ny.weekday === 'Sat' || ny.weekday === 'Sun') return false;
-    return ny.hm === '15:00';
-  }
-  if (isWeekend() || isHolidaySync()) return false;
-  const kst = kstParts();
-  if (slot === 'KR_ETF') return kst.hm === '15:00';
-  if (slot === 'KR_STOCK') return kst.hm === '19:00';
-  return false;
+/** KST HH:mm */
+const DEFAULT_BUY_TIME = {
+  KR_STOCK: '19:00',
+  KR_ETF: '15:00',
+  US: '04:00',
 };
+
+const normalizeBuyTime = (v) => {
+  const m = String(v ?? '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+};
+
+/** @param {'KR_STOCK'|'KR_ETF'|'US'} slot */
+const planBuyTime = (plan, slot) =>
+  normalizeBuyTime(plan?.strategyConfig?.infiniteBuyTime) || DEFAULT_BUY_TIME[slot];
+
+/** US는 뉴욕 기준 평일, KR은 KST 평일·휴장일 제외 */
+const isTradingDayForSlot = (slot) => {
+  if (slot === 'US') {
+    const { weekday } = nyParts();
+    return weekday !== 'Sat' && weekday !== 'Sun';
+  }
+  return !isWeekend() && !isHolidaySync();
+};
+
+const shouldRunPlanNow = (plan, slot, kstHm = kstParts().hm) =>
+  isTradingDayForSlot(slot) && planBuyTime(plan, slot) === kstHm;
 
 const dateKeyForSlot = (slot) => {
   if (slot === 'US') return nyParts().date;
@@ -241,14 +256,24 @@ const runBandBuyForPlan = async (userId, kiwoomInfo, plan, slot, dateKey) => {
   return { skipped: false, result, band, qty, price };
 };
 
-const tickSlot = async (slot) => {
-  if (!shouldRunSlotNow(slot)) return;
-  const dateKey = dateKeyForSlot(slot);
-  console.log(`${LOG} 슬롯 실행 ${slot} date=${dateKey}`);
-
+const tick = async () => {
+  const kstHm = kstParts().hm;
   const users = await getAllUsers();
   for (const user of users) {
     const userId = String(user.id);
+
+    let plans = [];
+    try {
+      plans = await listTradingPlans(userId, { status: 'active' });
+    } catch (err) {
+      console.error(`${LOG}[${userId}] 플랜 목록 실패:`, err.message);
+      continue;
+    }
+    const due = plans.filter(
+      (p) => p.strategyType === 'INFINITE_TRADE' && shouldRunPlanNow(p, planSlot(p), kstHm)
+    );
+    if (due.length === 0) continue;
+
     let kiwoomInfo;
     try {
       kiwoomInfo = await getKiwoomInfo(userId);
@@ -264,16 +289,7 @@ const tickSlot = async (slot) => {
       continue;
     }
 
-    let plans = [];
-    try {
-      plans = await listTradingPlans(userId, { status: 'active' });
-    } catch (err) {
-      console.error(`${LOG}[${userId}] 플랜 목록 실패:`, err.message);
-      continue;
-    }
-
-    for (const summary of plans) {
-      if (summary.strategyType !== 'INFINITE_TRADE') continue;
+    for (const summary of due) {
       let plan;
       try {
         plan = await getTradingPlanById(userId, summary.id);
@@ -281,7 +297,9 @@ const tickSlot = async (slot) => {
         continue;
       }
       if (!plan || plan.status !== 'active') continue;
-      if (planSlot(plan) !== slot) continue;
+      const slot = planSlot(plan);
+      const dateKey = dateKeyForSlot(slot);
+      console.log(`${LOG}[${userId}] plan=${plan.id} 매수시간 ${kstHm} 실행 ${slot} date=${dateKey}`);
 
       try {
         const out = await runBandBuyForPlan(userId, kiwoomInfo, plan, slot, dateKey);
@@ -303,18 +321,20 @@ const tickSlot = async (slot) => {
 const startInfiniteTradeScheduler = () => {
   if (started) return;
   started = true;
-  // 매분 확인 — 슬롯 시각에만 실제 실행
+  // 매분 확인 — 플랜별 매수시간(KST)에만 실제 실행
   cron.schedule('* * * * *', () => {
-    tickSlot('KR_ETF').catch((e) => console.error(`${LOG} KR_ETF:`, e.message));
-    tickSlot('KR_STOCK').catch((e) => console.error(`${LOG} KR_STOCK:`, e.message));
-    tickSlot('US').catch((e) => console.error(`${LOG} US:`, e.message));
+    tick().catch((e) => console.error(`${LOG} tick:`, e.message));
   });
-  console.log(`${LOG} 시작 (KR주식 19:00 / KR ETF 15:00 / US 15:00 ET)`);
+  console.log(
+    `${LOG} 시작 (플랜별 매수시간, 기본 KR주식 ${DEFAULT_BUY_TIME.KR_STOCK} / KR ETF ${DEFAULT_BUY_TIME.KR_ETF} / US ${DEFAULT_BUY_TIME.US} KST)`
+  );
 };
 
 module.exports = {
   startInfiniteTradeScheduler,
   runBandBuyForPlan,
   planSlot,
-  shouldRunSlotNow,
+  planBuyTime,
+  shouldRunPlanNow,
+  DEFAULT_BUY_TIME,
 };

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Paper, Box, Typography, Alert, Button, Chip } from '@mui/material';
 import TelegramIcon from '@mui/icons-material/Telegram';
+import ChatBubbleIcon from '@mui/icons-material/ChatBubble';
 import apiClient from '../utils/axios';
 import PageFrame, { pageHeaderSx } from '../components/PageFrame';
 
@@ -85,13 +86,24 @@ const TelegramSettings = () => {
         </Box>
       </Paper>
 
-      <Box sx={{ width: { xs: '100%', md: '50%', lg: 'calc(100% / 3)' }, minWidth: { md: 480 } }}>
-        {message && (
-          <Alert severity={message.type} sx={{ mb: 2 }} onClose={() => setMessage(null)}>
-            {message.text}
-          </Alert>
-        )}
+      {message && (
+        <Alert severity={message.type} sx={{ mb: 2 }} onClose={() => setMessage(null)}>
+          {message.text}
+        </Alert>
+      )}
 
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: '1fr',
+            md: 'repeat(2, minmax(0, 1fr))',
+            lg: 'repeat(3, minmax(0, 1fr))',
+          },
+          gap: 2,
+          alignItems: 'stretch',
+        }}
+      >
         <Paper sx={{ p: 3 }}>
           <Box display="flex" alignItems="center" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
             <Typography
@@ -144,6 +156,28 @@ const TelegramSettings = () => {
               </Typography>
             )}
           </Box>
+        </Paper>
+
+        <Paper sx={{ p: 3 }}>
+          <Box display="flex" alignItems="center" flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+            <Typography
+              variant="h6"
+              sx={{ fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: 0.75 }}
+            >
+              <ChatBubbleIcon sx={{ fontSize: '1.05rem', color: '#FEE500' }} />
+              카카오톡 알림 기능 설정
+            </Typography>
+            <Chip label="키움증권 제공" size="small" variant="outlined" />
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            <strong>연결 방법:</strong> 카카오톡 알림은 PlanGo가 아닌 <strong>키움증권</strong>에서 보내는 알림입니다.
+            키움증권 앱(영웅문)의 알림 설정에서 카카오톡 알림을 신청하면 받을 수 있습니다.
+            <br />
+            <strong>알림 내용:</strong> PlanGo가 낸 주문이 체결되면 체결 종목·수량·가격이 카카오톡 메세지로 전달됩니다.
+          </Typography>
+          <Alert severity="info">
+            텔레그램(Trailing 시작·종료)과 카카오톡(최종 체결)을 함께 사용하면 주문 진행 상황을 모두 확인할 수 있습니다.
+          </Alert>
         </Paper>
       </Box>
     </PageFrame>

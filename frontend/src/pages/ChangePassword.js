@@ -4,6 +4,7 @@ import LockResetIcon from '@mui/icons-material/LockReset';
 import LockIcon from '@mui/icons-material/Lock';
 import apiClient from '../utils/axios';
 import PageFrame, { pageHeaderSx } from '../components/PageFrame';
+import useCentralStatus from '../hooks/useCentralStatus';
 
 const MIN_LENGTH = 6;
 
@@ -21,6 +22,8 @@ const ChangePassword = () => {
   const [confirm, setConfirm] = useState('');
   const [message, setMessage] = useState(null);
   const [busy, setBusy] = useState(false);
+  const { checking, offlineMessage, recheck } = useCentralStatus();
+  const offline = !!offlineMessage;
 
   const handleVerify = async (e) => {
     e.preventDefault();
@@ -77,13 +80,26 @@ const ChangePassword = () => {
         </Box>
       </Paper>
 
-      <Box sx={{ width: { xs: '100%', md: '50%', lg: 'calc(100% / 3)' }, minWidth: { md: 480 } }}>
-        {message && (
-          <Alert severity={message.type} sx={{ mb: 2 }} onClose={() => setMessage(null)}>
-            {message.text}
-          </Alert>
-        )}
+      {offline && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={recheck} disabled={checking}>
+              다시 확인
+            </Button>
+          }
+        >
+          {offlineMessage}
+        </Alert>
+      )}
+      {message && (
+        <Alert severity={message.type} sx={{ mb: 2 }} onClose={() => setMessage(null)}>
+          {message.text}
+        </Alert>
+      )}
 
+      <Box sx={{ width: { xs: '100%', md: '50%', lg: 'calc(100% / 3)' }, minWidth: { md: 480 } }}>
         {!verified ? (
           <>
             <SectionTitle>현재 비밀번호 확인</SectionTitle>
@@ -99,11 +115,17 @@ const ChangePassword = () => {
                 label="현재 비밀번호"
                 autoComplete="current-password"
                 autoFocus
+                disabled={checking || offline}
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 sx={{ mb: 2 }}
               />
-              <Button type="submit" variant="contained" fullWidth disabled={busy || !currentPassword}>
+              <Button
+                type="submit"
+                variant="contained"
+                fullWidth
+                disabled={busy || checking || offline || !currentPassword}
+              >
                 확인
               </Button>
             </Paper>
