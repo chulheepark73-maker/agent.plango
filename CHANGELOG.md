@@ -3,6 +3,11 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.  
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 참고하며, 버전은 루트 `package.json`의 `version`과 맞춥니다.
 
+## [1.0.20261004.5] - 2026-10-11
+
+### Added
+- Guest 모드 추가 - 비밀번호 변경금지, 모의실전key 변경불가
+
 ## [1.0.20261004.4] - 2026-10-10
 
 ### Changed

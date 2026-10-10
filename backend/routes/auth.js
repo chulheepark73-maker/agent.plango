@@ -25,6 +25,7 @@ const { applyAccountBlock, clearAccountBlock, getAccountBlock } = require('../ut
 const { getAgentRevoked, onAgentRegistered } = require('../utils/agentLock');
 const { getSubscriptionSummaryForUser } = require('../utils/subscriptionStore');
 const { logLogin } = require('../utils/logger');
+const { rejectGuest } = require('../utils/guestMode');
 
 const getClientIp = (req) => {
   let ip =
@@ -293,7 +294,7 @@ router.put('/profile', authenticateToken, async (req, res) => {
   }
 });
 
-router.put('/change-password', authenticateToken, async (req, res) => {
+router.put('/change-password', authenticateToken, rejectGuest('게스트 모드에서는 비밀번호를 변경할 수 없습니다.'), async (req, res) => {
   const currentPassword = String(req.body?.currentPassword || '');
   const newPassword = String(req.body?.newPassword || '');
   if (!currentPassword) return res.status(400).json({ error: '현재 비밀번호를 입력해주세요.' });

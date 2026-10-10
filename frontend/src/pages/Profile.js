@@ -6,6 +6,7 @@ import apiClient from '../utils/axios';
 import PageFrame, { pageHeaderSx } from '../components/PageFrame';
 import { useAuth } from '../contexts/AuthContext';
 import useCentralStatus from '../hooks/useCentralStatus';
+import { isGuestEmail } from '../utils/guest';
 
 const PHONE_RE = /^01[0-9]{9}$/;
 const MIN_PASSWORD_LENGTH = 6;
@@ -29,6 +30,7 @@ const Profile = () => {
   const [busy, setBusy] = useState(false);
   const { checking, offlineMessage, recheck } = useCentralStatus();
   const offline = !!offlineMessage;
+  const isGuest = isGuestEmail(user?.email);
 
   useEffect(() => {
     if (!verified) return;
@@ -60,7 +62,7 @@ const Profile = () => {
   const handleSave = async (e) => {
     e.preventDefault();
     setMessage(null);
-    const changePassword = !!(newPassword || confirmPassword);
+    const changePassword = !isGuest && !!(newPassword || confirmPassword);
     if (changePassword) {
       if (newPassword.length < MIN_PASSWORD_LENGTH) {
         setMessage({ type: 'error', text: `새 비밀번호는 최소 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.` });
@@ -198,25 +200,31 @@ const Profile = () => {
               <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
                 <Typography sx={{ fontWeight: 'bold', fontSize: '0.875rem' }}>비밀번호 변경</Typography>
                 <Typography variant="caption" color="text.secondary">
-                  변경하지 않으려면 비워 두세요.
+                  {isGuest
+                    ? '게스트 모드에서는 비밀번호를 변경할 수 없습니다.'
+                    : '변경하지 않으려면 비워 두세요.'}
                 </Typography>
               </Box>
-              <TextField
-                size="small"
-                type="password"
-                label={`새 비밀번호 (${MIN_PASSWORD_LENGTH}자 이상)`}
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-              />
-              <TextField
-                size="small"
-                type="password"
-                label="새 비밀번호 재입력"
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-              />
+              {!isGuest && (
+                <>
+                  <TextField
+                    size="small"
+                    type="password"
+                    label={`새 비밀번호 (${MIN_PASSWORD_LENGTH}자 이상)`}
+                    autoComplete="new-password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="password"
+                    label="새 비밀번호 재입력"
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                  />
+                </>
+              )}
               <Button
                 type="submit"
                 variant="contained"

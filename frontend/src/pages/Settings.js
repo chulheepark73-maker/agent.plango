@@ -78,6 +78,7 @@ const PillField = ({
   inputProps,
   autoComplete,
   endAdornment,
+  disabled,
 }) => (
   <Box display="flex" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
     <Typography
@@ -94,6 +95,7 @@ const PillField = ({
       autoComplete={autoComplete}
       value={value}
       onChange={onChange}
+      disabled={disabled}
       inputProps={inputProps}
       InputProps={
         unit || endAdornment
@@ -131,6 +133,7 @@ const KiwoomCredentialsCard = ({
   onAppSecretChange,
   onSave,
   loading,
+  readOnly,
 }) => {
   const [showSecret, setShowSecret] = useState(false);
   const label = TRADING_MODE_LABEL[mode];
@@ -141,11 +144,11 @@ const KiwoomCredentialsCard = ({
     >
       <CardContent>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: -1 }}>
-          <Radio checked={selected} onChange={onSelect} disabled={loading} size="small" />
+          <Radio checked={selected} onChange={onSelect} disabled={loading || readOnly} size="small" />
           <Typography
             variant="h6"
-            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, cursor: 'pointer' }}
-            onClick={selected || loading ? undefined : onSelect}
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, cursor: readOnly ? 'default' : 'pointer' }}
+            onClick={selected || loading || readOnly ? undefined : onSelect}
           >
             <KeyIcon sx={{ fontSize: '1.05rem' }} />
             키움증권
@@ -175,6 +178,7 @@ const KiwoomCredentialsCard = ({
             autoComplete="off"
             value={appKey || ''}
             onChange={onAppKeyChange}
+            disabled={readOnly}
             placeholder={`키움증권에서 발급받은 ${label} App Key를 입력하세요`}
           />
           <Box>
@@ -188,6 +192,7 @@ const KiwoomCredentialsCard = ({
               autoComplete="new-password"
               value={appSecret === '***' ? '' : appSecret || ''}
               onChange={onAppSecretChange}
+              disabled={readOnly}
               placeholder={
                 hasAppSecret
                   ? '새로운 App Secret을 입력하거나 비워두세요'
@@ -205,7 +210,7 @@ const KiwoomCredentialsCard = ({
                 </InputAdornment>
               }
             />
-            {hasAppSecret && (!appSecret || appSecret === '***') && (
+            {!readOnly && hasAppSecret && (!appSecret || appSecret === '***') && (
               <Typography
                 variant="caption"
                 color="text.secondary"
@@ -217,8 +222,13 @@ const KiwoomCredentialsCard = ({
           </Box>
         </Box>
 
-        <Box display="flex" justifyContent="flex-end" sx={{ mt: 2 }}>
-          <Button variant="contained" onClick={onSave} disabled={loading}>
+        <Box display="flex" justifyContent="flex-end" alignItems="center" gap={1.5} sx={{ mt: 2 }}>
+          {readOnly && (
+            <Typography variant="caption" color="text.secondary">
+              게스트 모드에서는 인증키와 실전/모의투자를 변경할 수 없습니다.
+            </Typography>
+          )}
+          <Button variant="contained" onClick={onSave} disabled={loading || readOnly}>
             저장
           </Button>
         </Box>
@@ -263,8 +273,10 @@ const Settings = () => {
     planUsMonth: 0,
     planUsYear: 0,
     appVersion: '',
+    isGuest: false,
   });
   const [loading, setLoading] = useState(false);
+  const isGuest = !!settings.isGuest;
   // 입력 중인 값이 아니라 서버에 저장된 계좌번호 기준으로 경고
   const [savedAccountNo, setSavedAccountNo] = useState(null);
   const [message, setMessage] = useState({ type: '', text: '' });
@@ -432,7 +444,7 @@ const Settings = () => {
   };
 
   const handleTradingModeChange = async (mode) => {
-    if (mode === settings.tradingMode) return;
+    if (isGuest || mode === settings.tradingMode) return;
     const label = TRADING_MODE_LABEL[mode];
     if (
       !window.confirm(
@@ -1564,6 +1576,7 @@ const Settings = () => {
           onAppSecretChange={setField('kiwoomAppSecret')}
           onSave={() => handleSaveCredentials('live')}
           loading={loading}
+          readOnly={isGuest}
         />
 
         <KiwoomCredentialsCard
@@ -1577,6 +1590,7 @@ const Settings = () => {
           onAppSecretChange={setField('mockAppSecret')}
           onSave={() => handleSaveCredentials('mock')}
           loading={loading}
+          readOnly={isGuest}
         />
 
         <Divider sx={{ my: 3 }} />
@@ -1651,12 +1665,12 @@ const Settings = () => {
                   )}
                 </Alert>
                 )}
-                <Box sx={{ display: 'flex', gap: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <Button
                     variant="contained"
                     color="primary"
                     onClick={handleGenerateToken}
-                    disabled={loading}
+                    disabled={loading || isGuest}
                   >
                     토큰 재발급
                   </Button>
@@ -1665,10 +1679,15 @@ const Settings = () => {
                     color="error"
                     startIcon={<DeleteIcon />}
                     onClick={handleDeleteToken}
-                    disabled={loading}
+                    disabled={loading || isGuest}
                   >
                     토큰 삭제
                   </Button>
+                  {isGuest && (
+                    <Typography variant="caption" color="text.secondary">
+                      게스트 모드에서는 토큰을 발급·삭제할 수 없습니다.
+                    </Typography>
+                  )}
                 </Box>
               </Box>
             ) : (
@@ -1681,6 +1700,7 @@ const Settings = () => {
                   onClick={handleGenerateToken}
                   disabled={
                     loading ||
+                    isGuest ||
                     (settings.tradingMode === 'mock'
                       ? !settings.mockAppKey || !settings.mockHasAppSecret
                       : !settings.kiwoomAppKey || !settings.hasAppSecret)
@@ -1724,7 +1744,13 @@ const Settings = () => {
               value={settings.kiwoomAccountNo || ''}
               onChange={(e) => setSettings({ ...settings, kiwoomAccountNo: e.target.value })}
               placeholder="예: 12345678-01"
+              disabled={isGuest}
             />
+            {isGuest && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                게스트 모드에서는 계좌번호를 변경할 수 없습니다. (수수료·거래세는 저장할 수 있습니다)
+              </Typography>
+            )}
 
             <Typography
               variant="h6"

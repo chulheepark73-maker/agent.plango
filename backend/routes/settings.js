@@ -33,6 +33,7 @@ const { TRADING_MODES, normalizeTradingMode } = require('../utils/kiwoomMode');
 const { reconnectAll: reconnectKiwoomWs } = require('../services/kiwoomUserWsRegistry');
 
 const { appVersion } = require('../utils/appVersion');
+const { isGuestUser, rejectGuest } = require('../utils/guestMode');
 const DEFAULT_WATCH_LIST_NAME = '제목없음';
 const normalizeWatchListTitle = (value) => {
   const v = String(value ?? '').trim();
@@ -116,14 +117,17 @@ router.get('/', authenticateToken, async (req, res) => {
     const feeRates = await getBrokerFeeRates(req.user.userId);
     const live = kiwoom?.credentials?.live || {};
     const mock = kiwoom?.credentials?.mock || {};
+    const isGuest = await isGuestUser(req.user.userId);
+    // 게스트는 App Key 원문을 내려주지 않는다
+    const shownAppKey = (key) => (key && isGuest ? '*'.repeat(Math.min(String(key).length, 36)) : key || '');
     res.json({
       // 토큰 상태는 현재 선택된 모드 기준, 키는 실전/모의를 각각 내려준다
       tradingMode: kiwoom?.tradingMode || 'live',
-      kiwoomAppKey: live.appKey || '',
+      kiwoomAppKey: shownAppKey(live.appKey),
       kiwoomAppSecret: live.appSecret ? '***' : '',
       hasAppSecret: !!live.appSecret,
       kiwoomAccountNo: kiwoom?.accountNo || null,
-      mockAppKey: mock.appKey || '',
+      mockAppKey: shownAppKey(mock.appKey),
       mockHasAppSecret: !!mock.appSecret,
       hasAccessToken: hasAccessToken,
       isTokenExpired: isTokenExpired,
@@ -147,6 +151,7 @@ router.get('/', authenticateToken, async (req, res) => {
       planUsMonth: Number(plan.usMonth || 0),
       planUsYear: Number(plan.usYear || 0),
       appVersion,
+      isGuest,
     });
   } catch (error) {
     console.error('[환경설정 조회] 에러:', error);
@@ -383,7 +388,7 @@ router.post('/us-watchlist-names', authenticateToken, async (req, res) => {
 });
 
 // App Key/Secret 저장
-router.post('/app-credentials', authenticateToken, [
+router.post('/app-credentials', authenticateToken, rejectGuest('게스트 모드에서는 인증키를 변경할 수 없습니다.'), [
   body('appKey').notEmpty().withMessage('App Key가 필요합니다.')
 ], async (req, res) => {
   try {
@@ -412,7 +417,7 @@ router.post('/app-credentials', authenticateToken, [
 });
 
 // 실전투자 / 모의투자 선택
-router.put('/trading-mode', authenticateToken, async (req, res) => {
+router.put('/trading-mode', authenticateToken, rejectGuest('게스트 모드에서는 실전/모의투자를 변경할 수 없습니다.'), async (req, res) => {
   try {
     const mode = req.body?.mode;
     if (!TRADING_MODES.includes(mode)) {
@@ -432,7 +437,7 @@ router.put('/trading-mode', authenticateToken, async (req, res) => {
 });
 
 // 액세스 토큰 발급
-router.post('/generate-token', authenticateToken, async (req, res) => {
+router.post('/generate-token', authenticateToken, rejectGuest('게스트 모드에서는 토큰을 발급할 수 없습니다.'), async (req, res) => {
   try {
     const kiwoom = await getBrokerKiwoomBundle(req.user.userId);
     if (!kiwoom) {
@@ -553,7 +558,7 @@ router.post('/generate-token', authenticateToken, async (req, res) => {
 });
 
 // 액세스 토큰 삭제
-router.delete('/token', authenticateToken, async (req, res) => {
+router.delete('/token', authenticateToken, rejectGuest('게스트 모드에서는 토큰을 삭제할 수 없습니다.'), async (req, res) => {
   try {
     await clearAccessToken(req.user.userId);
 
@@ -604,7 +609,14 @@ router.post('/account-no', authenticateToken, [
     }
 
     const { accountNo } = req.body;
-    await saveAccountNo(req.user.userId, accountNo);
+    if (await isGuestUser(req.user.userId)) {
+      const saved = String((await getBrokerKiwoomBundle(req.user.userId))?.accountNo || '').trim();
+      if (String(accountNo).trim() !== saved) {
+        return res.status(403).json({ error: '게스트 모드에서는 계좌번호를 변경할 수 없습니다.', code: 'GUEST_READONLY' });
+      }
+    } else {
+      await saveAccountNo(req.user.userId, accountNo);
+    }
 
     const toRate = (percent) => {
       if (percent == null || percent === '') return undefined;
