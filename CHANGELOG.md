@@ -3,6 +3,16 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.  
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 참고하며, 버전은 루트 `package.json`의 `version`과 맞춥니다.
 
+## [1.0.0.7] - 2026-10-20
+
+### Changed
+- Claude code 에서 수정
+
+## [1.0.0.6] - 2026-10-11
+
+### Added
+- Agent 버전확인 기능추가 및 최신버전 다운로드 관련처리
+
 ## [1.0.20261004.5] - 2026-10-11
 
 ### Added
