@@ -141,6 +141,50 @@ class KiwoomAPI {
     }
   }
 
+  /**
+   * 계좌평가잔고내역 (kt00018) 종목별 행 전체 — 연속조회 포함
+   * 행: stk_cd(A005930), rmnd_qty(보유), trde_able_qty(매매가능) 등
+   * @returns {Promise<{ rows: object[], complete: boolean }>} complete=false 면 일부 페이지만 받음
+   */
+  async getAccountEvaluationRowsAllPages(accessToken, { maxPages = 10 } = {}) {
+    const rows = [];
+    let contYn = 'N';
+    let nextKey = '';
+    for (let page = 0; page < maxPages; page += 1) {
+      const response = await axios.post(
+        `${this.baseURL}/api/dostk/acnt`,
+        { qry_tp: '0', dmst_stex_tp: 'KRX' },
+        {
+          headers: {
+            'Content-Type': 'application/json;charset=UTF-8',
+            authorization: `Bearer ${accessToken}`,
+            'cont-yn': contYn,
+            'next-key': nextKey,
+            'api-id': 'kt00018',
+          },
+          timeout: 15000,
+          validateStatus: () => true,
+        }
+      );
+      if (response.status !== 200) throw this.handleError({ response });
+      if (response.data?.return_code !== undefined && response.data.return_code !== 0) {
+        throw {
+          status: 400,
+          message: response.data.return_msg || '계좌평가잔고 조회에 실패했습니다.',
+          data: response.data,
+        };
+      }
+      const list = response.data?.acnt_evlt_remn_indv_tot;
+      if (Array.isArray(list)) rows.push(...list);
+      const cont = response.headers['cont-yn'];
+      const nk = response.headers['next-key'];
+      if (cont !== 'Y' || !nk) return { rows, complete: true };
+      contYn = 'Y';
+      nextKey = nk;
+    }
+    return { rows, complete: false };
+  }
+
   // 잔고 조회 (일별잔고수익률 - ka01690 사용, 계좌정보와 동일한 API)
   async getBalance(accessToken, appKey, appSecret, qryDt = null) {
     try {

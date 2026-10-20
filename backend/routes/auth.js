@@ -26,6 +26,7 @@ const { getAgentRevoked, onAgentRegistered } = require('../utils/agentLock');
 const { getSubscriptionSummaryForUser } = require('../utils/subscriptionStore');
 const { logLogin } = require('../utils/logger');
 const { rejectGuest } = require('../utils/guestMode');
+const agentUpdater = require('../services/agentUpdater');
 
 const getClientIp = (req) => {
   let ip =
@@ -198,6 +199,7 @@ router.post(
       await clearAccountBlock({ source: 'login' });
 
       logLogin('LOGIN', userId, profile.username || email, clientIp, true, '', client);
+      agentUpdater.checkForUpdate();
       res.json({
         message: '로그인 성공',
         token: data.token,
@@ -227,6 +229,14 @@ router.post('/logout', authenticateTokenWithoutSession, async (req, res) => {
     }
   }
   res.json({ message: '로그아웃되었습니다.' });
+  // 응답을 보낸 뒤 교체·재시작
+  setTimeout(() => {
+    agentUpdater.applyUpdateIfReady('logout', { onlyWhenMarketClosed: true }).catch((e) => console.error('[업데이트] 로그아웃 교체 오류:', e.message));
+  }, 1000);
+});
+
+router.get('/update-status', authenticateToken, async (req, res) => {
+  res.json(await agentUpdater.getUpdateStatus());
 });
 
 router.get('/me', authenticateToken, async (req, res) => {

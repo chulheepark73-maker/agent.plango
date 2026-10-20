@@ -218,41 +218,55 @@ async function finalizeAfterComplete(userId, matched, order) {
 
   // 무한: 현재 cycle 전량 익절 → cycle 종료 + 새 cycle (entry부터 다시)
   if (side === 'SELL' && matched.strategyType === 'INFINITE_TRADE') {
-    try {
-      const { getTradingPlanById, openNewCycle } = require('./tradingV2Store');
-      const { avgCostFromPlanFills } = require('./infiniteTradeBands');
-      const plan = await getTradingPlanById(userId, matched.planId);
-      if (plan) {
-        const cycleId =
-          order.cycleId != null
-            ? Number(order.cycleId)
-            : plan.currentCycleId != null
-              ? Number(plan.currentCycleId)
-              : null;
-        const { remQty } = avgCostFromPlanFills(plan, { cycleId });
-        if (remQty <= 0) {
-          try {
-            const { stopV2SellTrailingsByPlanId } = require('./autoTradingTrailingStop');
-            stopV2SellTrailingsByPlanId(matched.planId, {
-              silent: true,
-              reason: '전량 익절',
-            });
-          } catch {
-            /* ignore */
-          }
-          const next = await openNewCycle(userId, matched.planId);
-          const newNo = next?.cycles?.slice(-1)?.[0]?.cycleNo;
-          console.log(
-            `${LOG}[${userId}] 무한 전량익절 → cycle 종료, 새 cycle=${newNo ?? '?'} plan=${matched.planId}`
-          );
-        }
-      }
-    } catch (err) {
-      console.error(`${LOG}[${userId}] 무한 새 cycle 실패:`, err.message);
-    }
+    await closeInfiniteCycleIfDone(userId, matched.planId, order.cycleId);
   }
 
   notifyV2Refresh();
+}
+
+/**
+ * 무한매매 cycle 이 끝났으면(매도 체결로 잔량 0, 미체결 주문 없음) 새 cycle 을 연다.
+ * 미체결 매수(배수매수 등)가 남아 있으면 열지 않는다 — 열고 나서 체결되면 끝난 cycle 에 붙어 관리되지 않는 보유분이 된다.
+ * 남은 주문이 체결되면 그 cycle 에서 매도 감시가 이어지고, 장마감 취소로 끝나면 그때 다시 호출되어 새 cycle 을 연다.
+ * @returns {Promise<boolean>} 새 cycle 을 열었으면 true
+ */
+async function closeInfiniteCycleIfDone(userId, planId, cycleIdHint = null) {
+  try {
+    const { getTradingPlanById, openNewCycle } = require('./tradingV2Store');
+    const { avgCostFromPlanFills } = require('./infiniteTradeBands');
+    const { hasOpenOrderForStage } = require('./tradingV2OrderExec');
+    const plan = await getTradingPlanById(userId, planId);
+    if (!plan || String(plan.strategyType) !== 'INFINITE_TRADE') return false;
+    const currentCycleId = plan.currentCycleId != null ? Number(plan.currentCycleId) : null;
+    const cycleId = cycleIdHint != null ? Number(cycleIdHint) : currentCycleId;
+    // 이미 다음 cycle 로 넘어갔으면 아무것도 하지 않음
+    if (cycleId == null || cycleId !== currentCycleId) return false;
+
+    // 매수 체결이 있었고 잔량 0 = 매도로 전량 소진
+    const { remQty, buyQty } = avgCostFromPlanFills(plan, { cycleId, includeSubmitted: false });
+    if (!(buyQty > 0) || remQty > 0) return false;
+
+    if (hasOpenOrderForStage(plan, 'BUY', null, cycleId) || hasOpenOrderForStage(plan, 'SELL', null, cycleId)) {
+      console.log(
+        `${LOG}[${userId}] 무한 전량익절 plan=${planId} — 미체결 주문이 남아 있어 새 cycle 보류 (체결 또는 장마감 정리 후 판단)`
+      );
+      return false;
+    }
+
+    try {
+      const { stopV2SellTrailingsByPlanId } = require('./autoTradingTrailingStop');
+      stopV2SellTrailingsByPlanId(planId, { silent: true, reason: '전량 익절' });
+    } catch {
+      /* ignore */
+    }
+    const next = await openNewCycle(userId, planId);
+    const newNo = next?.cycles?.slice(-1)?.[0]?.cycleNo;
+    console.log(`${LOG}[${userId}] 무한 전량익절 → cycle 종료, 새 cycle=${newNo ?? '?'} plan=${planId}`);
+    return true;
+  } catch (err) {
+    console.error(`${LOG}[${userId}] 무한 새 cycle 실패 plan=${planId}:`, err.message);
+    return false;
+  }
 }
 
 /**
@@ -381,4 +395,5 @@ module.exports = {
   tryCompleteTradingV2Fill,
   applyTradingV2FillProgress,
   applyTradingV2RestFill,
+  closeInfiniteCycleIfDone,
 };

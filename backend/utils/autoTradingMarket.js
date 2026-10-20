@@ -60,8 +60,10 @@ const formatTelegramPrice = (raw, stockMarket) => {
 
 const getMarketCutoffConfig = (stockMarket) => {
   if (stockMarket === 'US') {
-    // 애프터마켓 종료(NY 20:00 ≈ KST 09:00)까지 체결확인·감시 유지
-    return { label: '20:00(US/NY애프터)', tz: 'America/New_York', hour: 20, minute: 0 };
+    // 애프터마켓 종료(NY 20:00 ≈ KST 09:00, 조기폐장일 17:00)까지 체결확인·감시 유지
+    const { getUsSessionEnds } = require('./stockUtils');
+    const hour = Math.floor(getUsSessionEnds().afterEnd / 60);
+    return { label: `${hour}:00(US/NY애프터)`, tz: 'America/New_York', hour, minute: 0 };
   }
   const { isNXTTradingHours, isKRXAfterMarketHours, isKRXExtendedCloseHours } = require('./stockUtils');
   // NXT는 오전만 — 오전 세션 중 컷오프 08:50

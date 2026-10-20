@@ -3,13 +3,14 @@
  * - 매수시간: strategy_config.infiniteBuyTime (KST HH:mm, 1일 1회)
  * - 미설정 시 기본값: KR 주식 19:00 / KR ETF 15:00 / US 04:00
  * - 1회 entry 체결 다음날부터, 평단 대비 배수로 금액 산정 후 현재가 지정가 즉시 주문
+ * - 매수시간부터 RETRY_WINDOW_MIN 분 동안 매분 재시도 (시세 없음·주문 거부 등), 성공·스킵 확정 시 당일 완료
  */
 
 const cron = require('node-cron');
 const { getAllUsers } = require('./userStore');
 const { getKiwoomInfo } = require('./kiwoomUtils');
-const { listTradingPlans, getTradingPlanById, updateTradingPlan } = require('./tradingV2Store');
-const { executeTradingV2BuyOrder, hasOpenOrderForStage } = require('./tradingV2OrderExec');
+const { listTradingPlans, getTradingPlanById, setInfiniteLastBandBuyDate } = require('./tradingV2Store');
+const { executeTradingV2BuyOrder, hasOpenOrderForStage, isV2OrderOnCooldown } = require('./tradingV2OrderExec');
 const {
   resolveInfiniteBandBuy,
   avgCostFromPlanFills,
@@ -18,9 +19,14 @@ const {
   clampBuyBySeed,
 } = require('./infiniteTradeBands');
 const { normalizeAutoCode, isUsMarket } = require('./autoTradingMarket');
-const { getKoreaDateString, isWeekend, isHolidaySync } = require('./stockUtils');
+const { getKoreaDateString, isWeekend, isHolidaySync, isUsMarketDay } = require('./stockUtils');
 
 const LOG = '[무한매매스케줄]';
+
+/** 매수시간부터 이 시간(분) 안에서만 실행·재시도 */
+const RETRY_WINDOW_MIN = 10;
+/** 감시 모니터 시세가 이보다 오래됐으면 쓰지 않는다 (장 전환 전 가격 등) */
+const PRICE_MAX_AGE_MS = 10 * 60 * 1000;
 
 /** @type {Set<string>} planId:dateKey */
 const ranKeys = new Set();
@@ -86,7 +92,9 @@ const getPriceForPlan = async (userId, stockCode, stockMarket) => {
       if (typeof getLastPrices !== 'function') continue;
       const map = getLastPrices(userId);
       const row = map?.get(code) || map?.get(String(code).toUpperCase());
-      if (row?.price > 0) return Number(row.price);
+      if (!(row?.price > 0)) continue;
+      if (row.ts && Date.now() - Number(row.ts) > PRICE_MAX_AGE_MS) continue;
+      return Number(row.price);
     } catch {
       /* ignore */
     }
@@ -114,17 +122,23 @@ const normalizeBuyTime = (v) => {
 const planBuyTime = (plan, slot) =>
   normalizeBuyTime(plan?.strategyConfig?.infiniteBuyTime) || DEFAULT_BUY_TIME[slot];
 
-/** US는 뉴욕 기준 평일, KR은 KST 평일·휴장일 제외 */
+/** US는 뉴욕 기준 평일·미국 휴장일(usHolidays.json) 제외, KR은 KST 평일·휴장일 제외 */
 const isTradingDayForSlot = (slot) => {
-  if (slot === 'US') {
-    const { weekday } = nyParts();
-    return weekday !== 'Sat' && weekday !== 'Sun';
-  }
+  if (slot === 'US') return isUsMarketDay();
   return !isWeekend() && !isHolidaySync();
 };
 
-const shouldRunPlanNow = (plan, slot, kstHm = kstParts().hm) =>
-  isTradingDayForSlot(slot) && planBuyTime(plan, slot) === kstHm;
+const hmToMinutes = (hm) => {
+  const [h, m] = String(hm).split(':').map(Number);
+  return h * 60 + m;
+};
+
+/** 매수시간 ~ +RETRY_WINDOW_MIN 분 (자정을 넘기지 않음 — 넘기면 다음 날짜로 다시 실행되므로) */
+const shouldRunPlanNow = (plan, slot, kstHm = kstParts().hm) => {
+  if (!isTradingDayForSlot(slot)) return false;
+  const diff = hmToMinutes(kstHm) - hmToMinutes(planBuyTime(plan, slot));
+  return diff >= 0 && diff < RETRY_WINDOW_MIN;
+};
 
 const dateKeyForSlot = (slot) => {
   if (slot === 'US') return nyParts().date;
@@ -143,12 +157,7 @@ const planSlot = (plan) => {
 
 const markBandBuyDone = async (userId, plan, dateKey) => {
   try {
-    await updateTradingPlan(userId, plan.id, {
-      strategyConfig: {
-        ...(plan.strategyConfig || {}),
-        lastBandBuyDate: dateKey,
-      },
-    });
+    await setInfiniteLastBandBuyDate(userId, plan.id, dateKey);
   } catch (err) {
     console.error(`${LOG} lastBandBuyDate 저장 실패 plan=${plan.id}:`, err.message);
   }
@@ -179,6 +188,11 @@ const runBandBuyForPlan = async (userId, kiwoomInfo, plan, slot, dateKey) => {
 
   if (hasOpenOrderForStage(plan, 'BUY', null)) {
     return { skipped: true, reason: 'open_buy_order' };
+  }
+
+  // 직전 주문이 거부·불확실로 막혀 있으면 이번 분은 건너뛰고 창 안에서 다시 시도
+  if (isV2OrderOnCooldown('BUY', plan.id)) {
+    return { skipped: true, reason: 'cooldown' };
   }
 
   const stockMarket = resolveMarket(plan);
@@ -299,6 +313,10 @@ const tick = async () => {
       if (!plan || plan.status !== 'active') continue;
       const slot = planSlot(plan);
       const dateKey = dateKeyForSlot(slot);
+      // 재시도 창 안에서 이미 끝난 플랜은 조용히 건너뜀
+      if (ranKeys.has(`${plan.id}:${dateKey}`) || String(plan.strategyConfig?.lastBandBuyDate || '') === dateKey) {
+        continue;
+      }
       console.log(`${LOG}[${userId}] plan=${plan.id} 매수시간 ${kstHm} 실행 ${slot} date=${dateKey}`);
 
       try {

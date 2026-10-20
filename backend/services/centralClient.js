@@ -13,6 +13,7 @@
  *   GET    /api/auth/me                     → { id, email, ..., subscription... }
  *   POST   /api/auth/subscription           { planCode } → { message, subscription... }
  *   POST   /api/agent/register              { name, version } → { agentId, agentSecret }
+ *   GET    /api/agent/latest-version        → { version, downloadUrl, sha256, notes } (공개)
  * 에이전트 자격 (X-Agent-Id / X-Agent-Secret, X-Agent-Version 은 중앙 목록의 버전 갱신용)
  *   GET    /api/agent/owner                 → { user, subscription, telegram }
  *   POST   /api/agent/notify                { text } → { ok }
@@ -108,6 +109,10 @@ const getPublicKey = async ({ force = false } = {}) => {
 
 const listPlans = () => wrap(() => http.get('/api/auth/plans'));
 
+/** 중앙에 등록된 최신 에이전트 배포본 { version, downloadUrl, sha256, notes } (없으면 version: null) */
+const getLatestAgentVersion = () =>
+  wrap(() => http.get('/api/agent/latest-version', { timeout: 8000 }));
+
 /** 중앙 서버 응답 여부만 확인 (네트워크 오류일 때만 false) */
 const pingCentral = async () => {
   try {
@@ -194,6 +199,7 @@ module.exports = {
   centralUnavailableMessage,
   getPublicKey,
   listPlans,
+  getLatestAgentVersion,
   pingCentral,
   login,
   logout,

@@ -120,7 +120,8 @@ const TelegramSettings = () => {
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             <strong>연결 방법:</strong> 「텔레그램 봇으로 연결」을 누르면 텔레그램이 열리고, 봇 채팅에서 <strong>시작(/start)</strong>을 누르면 이 계정에 채팅 ID가
             저장되어 알림을 받을 수 있습니다.
-            <strong>알림 내용:</strong> Trailing 의 시작과 종료가 모두 텔레그램 알림으로 전달합니다. 최종 체결 여부는 카카오톡 메세지로 키움증권 제공입니디.
+            <br />
+            <strong>알림 내용:</strong> Trailing 의 시작과 종료가 모두 텔레그램 알림으로 전달합니다. 최종 체결 여부는 카카오톡 메세지로 키움증권 제공입니다.
           </Typography>
           {settings.agentRegistered === false && (
             <Alert severity="info" sx={{ mb: 2 }}>

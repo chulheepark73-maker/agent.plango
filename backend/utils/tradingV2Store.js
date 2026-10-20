@@ -496,28 +496,8 @@ const createTradingPlan = async (userId, body = {}) => {
           : [];
 
     if (stageInputs.length > 0) {
-      await client.query(`DELETE FROM trading_stages WHERE cycle_id = $1`, [cycleRow.id]);
-      for (const s of stageInputs) {
-        const side = String(s.side || '').toUpperCase();
-        if (side !== 'BUY' && side !== 'SELL') continue;
-        const stageNo = parseInt(s.stage, 10);
-        if (!Number.isInteger(stageNo) || stageNo < 1) continue;
-        await client.query(
-          `INSERT INTO trading_stages (
-             cycle_id, side, stage, percent, target_price, target_amount, target_qty, status, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)`,
-          [
-            cycleRow.id,
-            side,
-            stageNo,
-            toNum(s.percent),
-            toNum(s.targetPrice ?? s.target_price),
-            toNum(s.targetAmount ?? s.target_amount),
-            toNum(s.targetQty ?? s.target_qty),
-            STAGE_STATUSES.includes(s.status) ? s.status : 'pending',
-          ]
-        );
-      }
+      // 재저장 시 차수 ID 유지 — 감시 중인 trailing·주문이 옛 stage_id 를 들고 있다
+      await syncStagesForCycle(client, cycleRow.id, stageInputs);
     }
 
     await client.query('COMMIT');
@@ -737,6 +717,22 @@ const updateTradingPlan = async (userId, planId, patch = {}) => {
   }
 
   return getTradingPlanById(uid, id);
+};
+
+/**
+ * 무한매매 당일 배수매수 완료일만 기록.
+ * updateTradingPlan 으로 저장하면 설정 변경으로 보고 armed trailing(익절 감시)을 끊고,
+ * 읽어 둔 옛 설정 전체를 덮어써 그 사이 사용자 변경이 사라진다.
+ */
+const setInfiniteLastBandBuyDate = async (userId, planId, dateKey) => {
+  await ensureTradingV2Tables();
+  await pool.query(
+    `UPDATE trading_plans
+     SET strategy_config = json_set(COALESCE(strategy_config, '{}'), '$.lastBandBuyDate', $1),
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = $2 AND user_id = $3`,
+    [String(dateKey), Number(planId), String(userId)]
+  );
 };
 
 /**
@@ -1220,6 +1216,31 @@ const openNewCycle = async (userId, planId) => {
   }
 };
 
+/**
+ * 주문 대상 차수 찾기 — stageId 가 플랜 재저장으로 사라졌으면 (side, 차수, 회차)로 현재 차수를 찾는다.
+ * @returns {object|null} plan.stages 의 차수 (없으면 null)
+ */
+const resolveStageForOrder = (plan, { side, stageId, stageNo, cycleId } = {}) => {
+  const stages = plan?.stages || [];
+  if (stageId != null) {
+    const byId = stages.find((s) => Number(s.id) === Number(stageId));
+    if (byId) return byId;
+  }
+  const no = parseInt(stageNo, 10);
+  if (!Number.isInteger(no) || no < 1) return null;
+  const sd = String(side || '').toUpperCase();
+  const cid =
+    cycleId != null ? Number(cycleId) : plan?.currentCycleId != null ? Number(plan.currentCycleId) : null;
+  return (
+    stages.find(
+      (s) =>
+        String(s.side).toUpperCase() === sd &&
+        Number(s.stage) === no &&
+        (cid == null || Number(s.cycleId) === cid)
+    ) || null
+  );
+};
+
 const createTradingOrder = async (userId, planId, body = {}) => {
   await ensureTradingV2Tables();
   const plan = await getTradingPlanById(String(userId), planId);
@@ -1230,11 +1251,24 @@ const createTradingOrder = async (userId, planId, body = {}) => {
 
   let cycleId = body.cycleId != null ? Number(body.cycleId) : null;
   let stageNo = body.stageNo != null ? parseInt(body.stageNo, 10) : null;
+  let stageId = null;
   if (body.stageId != null) {
-    const st = (plan.stages || []).find((s) => Number(s.id) === Number(body.stageId));
-    if (st?.cycleId && cycleId == null) cycleId = Number(st.cycleId);
-    if (st?.stage != null && !(Number.isInteger(stageNo) && stageNo > 0)) {
-      stageNo = Number(st.stage);
+    const st = resolveStageForOrder(plan, { side, stageId: body.stageId, stageNo, cycleId });
+    if (st) {
+      stageId = Number(st.id);
+      if (st.cycleId && cycleId == null) cycleId = Number(st.cycleId);
+      if (st.stage != null && !(Number.isInteger(stageNo) && stageNo > 0)) {
+        stageNo = Number(st.stage);
+      }
+      if (stageId !== Number(body.stageId)) {
+        console.warn(
+          `[TradingV2] plan=${plan.id} ${side} ${stageNo}차 차수ID 변경 ${body.stageId}→${stageId} 으로 주문 저장`
+        );
+      }
+    } else {
+      console.warn(
+        `[TradingV2] plan=${plan.id} ${side} 차수ID ${body.stageId} 없음 — 차수 연결 없이 주문 저장`
+      );
     }
   }
   if (cycleId == null && plan.currentCycleId) cycleId = Number(plan.currentCycleId);
@@ -1250,7 +1284,7 @@ const createTradingOrder = async (userId, planId, body = {}) => {
     [
       plan.id,
       cycleId,
-      body.stageId != null ? Number(body.stageId) : null,
+      stageId,
       stageNo,
       plan.brokerAccountId,
       plan.instrumentId,
@@ -1266,12 +1300,18 @@ const createTradingOrder = async (userId, planId, body = {}) => {
     ]
   );
 
-  if (body.stageId && body.markStageOrdered) {
-    await pool.query(
-      `UPDATE trading_stages SET status = 'ordered', updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND status = 'pending'`,
-      [Number(body.stageId)]
-    );
+  if (stageId && body.markStageOrdered) {
+    // 주문 행은 이미 저장됨 — 여기서 throw 하면 호출 측이 같은 주문번호를 한 번 더 저장한다.
+    // 차수가 pending 으로 남아도 stage_id 가 붙은 미체결 주문이 있어 재주문은 막힌다.
+    try {
+      await pool.query(
+        `UPDATE trading_stages SET status = 'ordered', updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND status = 'pending'`,
+        [stageId]
+      );
+    } catch (err) {
+      console.error(`[TradingV2] plan=${plan.id} 차수 ordered 표시 실패 stage=${stageId}:`, err.message);
+    }
   }
 
   return mapOrder(result.rows[0]);
@@ -1868,7 +1908,9 @@ module.exports = {
   deleteTradingPlansForInstrumentIfClean,
   releaseTradingPlansForUnwatchedInstrument,
   openNewCycle,
+  setInfiniteLastBandBuyDate,
   createTradingOrder,
+  resolveStageForOrder,
   createTradingFill,
   sumFilledQtyForOrder,
   sumFillsForOrder,

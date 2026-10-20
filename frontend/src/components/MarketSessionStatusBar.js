@@ -9,7 +9,7 @@ import {
   isHolidaySync,
   isUsTradingHours,
   getUsSessionLabel,
-  isUsWeekend,
+  isUsMarketClosedDay,
 } from '../utils/tradingHours';
 
 const DOT = {
@@ -31,7 +31,7 @@ const MarketSessionStatusBar = () => {
   const [usSessionLabel, setUsSessionLabel] = useState(getUsSessionLabel());
   const [isWeekendDay, setIsWeekendDay] = useState(isWeekend());
   const [isHolidayDay, setIsHolidayDay] = useState(isHolidaySync());
-  const [isUsWeekendDay, setIsUsWeekendDay] = useState(isUsWeekend());
+  const [isUsClosedDay, setIsUsClosedDay] = useState(isUsMarketClosedDay());
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -44,7 +44,7 @@ const MarketSessionStatusBar = () => {
       setUsSessionLabel(getUsSessionLabel());
       setIsWeekendDay(isWeekend());
       setIsHolidayDay(isHolidaySync());
-      setIsUsWeekendDay(isUsWeekend());
+      setIsUsClosedDay(isUsMarketClosedDay());
     };
     check();
     setCurrentTime(new Date());
@@ -79,11 +79,11 @@ const MarketSessionStatusBar = () => {
     if (isInUsTradingHours && usSessionLabel) {
       return { label: usSessionLabel, dotColor: DOT.us };
     }
-    if (isUsWeekendDay) {
+    if (isUsClosedDay) {
       return { label: 'US 휴장', dotColor: DOT.closed };
     }
     return { label: 'US 장마감', dotColor: DOT.closed };
-  }, [isInUsTradingHours, usSessionLabel, isUsWeekendDay]);
+  }, [isInUsTradingHours, usSessionLabel, isUsClosedDay]);
 
   const formattedTime = useMemo(() => {
     const h = String(currentTime.getHours()).padStart(2, '0');

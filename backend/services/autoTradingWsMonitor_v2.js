@@ -685,7 +685,32 @@ async function runChecksForTick(m, codeKey) {
   }
 }
 
+/**
+ * 구독 갱신 — 한 번에 하나만 실행.
+ * 30초 주기 타이머와 requestSymbolRefreshSoon(체결·trailing·저장)이 겹쳐 부르면
+ * 옛 플랜 상태로 만든 목록이 늦게 끝나 최신 목록을 덮어쓰거나 모니터 생성·삭제가 엇갈린다.
+ * 진행 중에 들어온 요청은 표시만 해 두고, 끝난 뒤 최신 상태로 한 번만 다시 돈다.
+ */
+let refreshRunning = false;
+let refreshPending = false;
+
 async function refreshSubscriptions() {
+  if (refreshRunning) {
+    refreshPending = true;
+    return;
+  }
+  refreshRunning = true;
+  try {
+    do {
+      refreshPending = false;
+      await runRefreshSubscriptions();
+    } while (refreshPending && started);
+  } finally {
+    refreshRunning = false;
+  }
+}
+
+async function runRefreshSubscriptions() {
   try {
     // 정규장·시간외종가·애프터 포함 — 15:30 미체결 취소 후에도 pending 감시는 유지
     const isKRXTime = isKRXSessionOpen();

@@ -156,6 +156,8 @@ server.listen(PORT, '0.0.0.0', () => {
   startAutoTradingWsMonitorV2();
   // 지표기반매매 — 조건검색·트래킹·틱 매도 (레거시 auto 모니터 대체)
   startIndicatorWsMonitor();
+  // 에이전트 자동 업데이트 (로그인 시 확인, 로그아웃·07:55 교체)
+  require('./services/agentUpdater').startAgentUpdater();
   // 무한매매 단계별 배수 스케줄 매수 (플랜별 매수시간 KST, 기본 KR 19:00 / ETF 15:00 / US 04:00)
   startInfiniteTradeScheduler();
 

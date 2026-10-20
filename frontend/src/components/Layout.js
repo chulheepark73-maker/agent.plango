@@ -144,6 +144,27 @@ const Layout = () => {
     };
   }, []);
 
+  const [updateNotice, setUpdateNotice] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get('/auth/update-status')
+      .then(({ data }) => {
+        if (cancelled || !data?.updateAvailable || !data.message) return;
+        if (sessionStorage.getItem('agentUpdateNoticeDismissed') === data.latestVersion) return;
+        setUpdateNotice({ version: data.latestVersion, message: data.message });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const dismissUpdateNotice = useCallback(() => {
+    if (updateNotice?.version) sessionStorage.setItem('agentUpdateNoticeDismissed', updateNotice.version);
+    setUpdateNotice(null);
+  }, [updateNotice]);
+
   const handleThemeToggle = useCallback(() => {
     setThemeMode(isDark ? 'white' : 'dark').catch(() => {});
   }, [isDark, setThemeMode]);
@@ -424,6 +445,11 @@ const Layout = () => {
               {agentStatus?.agentRevoked?.message
                 ? `${agentStatus.agentRevoked.message} 서버 등록 후 이용할 수 있습니다.`
                 : '이 서버는 아직 등록되지 않았습니다. 서버 등록 후 자동매매와 모든 기능을 이용할 수 있습니다.'}
+            </Alert>
+          )}
+          {updateNotice && (
+            <Alert severity="info" sx={{ mb: 2 }} onClose={dismissUpdateNotice}>
+              {updateNotice.message}
             </Alert>
           )}
           <Outlet />
